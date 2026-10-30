@@ -11,6 +11,7 @@
 
 <p align="center">
   <a href="https://github.com/b1n9bna/dubbo-mcp/releases/latest"><img src="https://img.shields.io/github/v/release/b1n9bna/dubbo-mcp?style=flat-square&color=blue" alt="Latest Release"></a>
+  <a href="https://github.com/b1n9bna/dubbo-mcp/actions/workflows/ci.yml"><img src="https://github.com/b1n9bna/dubbo-mcp/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <img src="https://img.shields.io/badge/Model_Context_Protocol-MCP-green?style=flat-square" alt="MCP Compatible">
   <a href="https://glama.ai/mcp/servers/b1n9bna/dubbo-mcp"><img src="https://glama.ai/mcp/servers/b1n9bna/dubbo-mcp/badges/score.svg" alt="Glama Score"></a>
   <img src="https://img.shields.io/badge/JDK-8_|_11_|_17_|_21-blue?style=flat-square&logo=openjdk" alt="JDK 8+">
@@ -23,6 +24,37 @@
 Dubbo-MCP 是连接 AI 编程助手（Cursor、Claude Code、Claude Desktop、Codex CLI、Windsurf 等）与 Apache Dubbo 微服务的 [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) 官方协议服务端。
 
 在日常排查业务问题、接口联调与单元测试时，让 AI 助手直接检索微服务接口定义、反查复杂 DTO 入参结构并基于原生泛化调用（Generic Invocation）发起实时 RPC 调试，**无需手动编写测试用例，无需在本地工程引入任何业务 API 依赖 Jar 包**。
+
+---
+
+## 💡 实际交互体感 (Cursor / Claude Desktop)
+
+告别在浏览器登录 Dubbo Admin 翻找接口、用 Postman 拼装参数、或者写一堆仅用于联调的临时单元测试，直接在对话框向 AI 发出指令：
+
+> **开发者：**  
+> *“帮我查一下测试环境的仓库接口，调一下按仓库 ID=2001 查询库存的方法。”*  
+>  
+> **AI Agent（通过 dubbo-mcp 自动协作）：**  
+> 1. 🔍 `dubbo_list_services(keyword="Warehouse")`  
+>    ↳ 发现目标服务：`cn.wangoon.access.api.rpc.WarehouseServiceRpc:1.0.0`  
+> 2. 📋 `dubbo_get_service_detail(interfaceName="...")`  
+>    ↳ 提取方法签名：`queryStock(cn.wangoon.access.dto.WarehouseQueryDTO)`  
+> 3. ⚡ `dubbo_invoke(interfaceName="...", method="queryStock", args=[{"warehouseId": 2001}])`  
+>    ↳ Dubbo 原生泛化调用执行完成（耗时 **14 ms**）  
+>  
+> **实时返回给大模型：**  
+> ```json
+> {
+>   "code": 200,
+>   "data": {
+>     "warehouseId": 2001,
+>     "warehouseName": "华东一号中心仓",
+>     "availableStock": 1420,
+>     "lockedStock": 35,
+>     "status": "OPERATIONAL"
+>   }
+> }
+> ```
 
 ---
 
@@ -297,6 +329,13 @@ Cursor 将自动调用 `dubbo_get_service_detail` 获取签名，并调用 `dubb
 * **Token 消耗直降 98.6%**：单次排查实测仅需 **572 Token**，而视觉或 DOM 浏览器 Agent 多轮对话会复合累加产生 **33,000 ~ 40,000 Token**（参见上方基准图表）；
 * **毫秒级直接响应**：直连 RPC/API，避免了浏览器自动化中的网页加载、DOM 解析、模拟点击和截图延时（通常耗时 30~60 秒）；
 * **确定性与安全性**：杜绝了前端页面改版、弹窗漏点或 OCR 识别失误，且具备严格的只读正则守卫与敏感字段脱敏。
+</details>
+
+<details>
+<summary><b>6. 支持哪些注册中心？如果公司用 Nacos 而不是 ZooKeeper 可以使用吗？</b></summary>
+
+* **Dubbo Admin 模式 (`type=dubbo-admin`)**：**完全原生支持，开箱即用。** Dubbo Admin 本身具备多注册中心聚合网关能力，其服务端原生对接 Nacos、ZooKeeper、Consul、Apollo 等。如果企业使用的是 Nacos + Dubbo Admin 架构，`dubbo-mcp` 无需额外配置即可直接检索与调用服务；
+* **直连模式 (`type=zookeeper`)**：目前直连模式原生支持 ZooKeeper 集群。针对无需 Dubbo Admin 的纯 Nacos 客户端直连 Driver 正在规划实现中。
 </details>
 
 ---

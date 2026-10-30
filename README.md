@@ -11,6 +11,7 @@
 
 <p align="center">
   <a href="https://github.com/b1n9bna/dubbo-mcp/releases/latest"><img src="https://img.shields.io/github/v/release/b1n9bna/dubbo-mcp?style=flat-square&color=blue" alt="Latest Release"></a>
+  <a href="https://github.com/b1n9bna/dubbo-mcp/actions/workflows/ci.yml"><img src="https://github.com/b1n9bna/dubbo-mcp/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <img src="https://img.shields.io/badge/Model_Context_Protocol-MCP-green?style=flat-square" alt="MCP Compatible">
   <a href="https://glama.ai/mcp/servers/b1n9bna/dubbo-mcp"><img src="https://glama.ai/mcp/servers/b1n9bna/dubbo-mcp/badges/score.svg" alt="Glama Score"></a>
   <img src="https://img.shields.io/badge/JDK-8_|_11_|_17_|_21-blue?style=flat-square&logo=openjdk" alt="JDK 8+">
@@ -23,6 +24,37 @@
 Dubbo-MCP is a [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server that connects AI coding assistants (Cursor, Claude Code, Claude Desktop, Codex CLI, Windsurf, etc.) directly to Apache Dubbo microservices.
 
 During daily troubleshooting, interface debugging, and unit testing, it allows AI coding agents to discover registered service definitions, inspect complex DTO parameter structures, and execute real-time RPC calls via native Generic Invocation — **with no need to write manual test cases and zero requirement to import API dependency JARs into local projects.**
+
+---
+
+## 💡 What It Feels Like (Cursor / Claude Desktop)
+
+Instead of manually logging into Dubbo Admin web consoles, flipping through Swagger docs, or writing throwaway test scripts, simply converse with your AI assistant:
+
+> **Developer:**
+> *"Query the warehouse service in the test environment and fetch stock details for warehouse ID 2001."*
+>
+> **AI Agent (via Dubbo-MCP):**
+> 1. 🔍 `dubbo_list_services(keyword="Warehouse")`  
+>    ↳ Discovers target service: `cn.wangoon.access.api.rpc.WarehouseServiceRpc:1.0.0`
+> 2. 📋 `dubbo_get_service_detail(interfaceName="...")`  
+>    ↳ Introspects signature: `queryStock(cn.wangoon.access.dto.WarehouseQueryDTO)`
+> 3. ⚡ `dubbo_invoke(interfaceName="...", method="queryStock", args=[{"warehouseId": 2001}])`  
+>    ↳ Native Dubbo generic invocation executed in **14 ms**
+>
+> **Real-time response returned to chat:**
+> ```json
+> {
+>   "code": 200,
+>   "data": {
+>     "warehouseId": 2001,
+>     "warehouseName": "East China Regional Distribution Center #1",
+>     "availableStock": 1420,
+>     "lockedStock": 35,
+>     "status": "OPERATIONAL"
+>   }
+> }
+> ```
 
 ---
 
@@ -297,6 +329,13 @@ Cursor automatically executes `dubbo_get_service_detail` to retrieve signatures 
 * **98.6% Token Savings**: Real-world inspections require only **572 tokens** vs **33,000 ~ 40,000 tokens** for browser agents;
 * **Sub-Second Latency**: Direct RPC responses avoid webpage rendering, DOM parsing, simulated typing, and screenshot latencies (which take 30~60s);
 * **Deterministic & Safe**: Completely immune to frontend UI redesigns or popup misclicks, with strict read-only regex guards and automated sensitive data masking.
+</details>
+
+<details>
+<summary><b>6. What registries are supported? Can I use Nacos instead of ZooKeeper?</b></summary>
+
+* **Dubbo Admin Mode (`type=dubbo-admin`)**: **Fully supported out of the box.** Dubbo Admin aggregates service registries at the server layer, natively supporting Nacos, ZooKeeper, Consul, and Apollo. If your infrastructure uses Nacos + Dubbo Admin, `dubbo-mcp` connects seamlessly without additional settings.
+* **Direct Mode (`type=zookeeper`)**: ZooKeeper is natively supported for direct cluster calls without Dubbo Admin. Direct standalone driver support for Nacos is on the active roadmap.
 </details>
 
 ---
