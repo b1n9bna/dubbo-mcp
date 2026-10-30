@@ -1,7 +1,7 @@
 {
   "serverInfo": {
     "name": "dubbo-mcp",
-    "version": "1.0.0"
+    "version": "1.0.1"
   },
   "description": "Enterprise Dubbo RPC and HTTP Gateway Bridge for Model Context Protocol (MCP) and AI Coding Agents (Cursor, Claude Desktop, Codex CLI, Windsurf)",
   "tools": [
