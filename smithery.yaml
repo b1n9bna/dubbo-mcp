@@ -1,0 +1,17 @@
+# Smithery configuration for Dubbo-MCP
+# https://smithery.ai/docs/config#smitheryyaml
+
+startCommand:
+  type: stdio
+  configSchema:
+    type: object
+    properties:
+      env:
+        type: string
+        default: "test"
+        description: "Target environment profile defined in ~/.dubbo-mcp/config.properties (e.g. test, uat, prod)"
+  commandFunction: |-
+    (config) => ({
+      command: 'java',
+      args: ['-jar', `${process.env.HOME || process.env.USERPROFILE}/.dubbo-mcp/dubbo-mcp.jar`, ...(config.env ? [`--env=${config.env}`] : [])]
+    })

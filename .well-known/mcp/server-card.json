@@ -1,0 +1,69 @@
+{
+  "serverInfo": {
+    "name": "dubbo-mcp",
+    "version": "1.0.0"
+  },
+  "description": "Enterprise Dubbo RPC and HTTP Gateway Bridge for Model Context Protocol (MCP) and AI Coding Agents (Cursor, Claude Desktop, Codex CLI, Windsurf)",
+  "tools": [
+    {
+      "name": "dubbo_list_services",
+      "description": "Search and list registered Dubbo RPC services by keyword (e.g. 'order', 'user', 'trade')",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "keyword": { "type": "string", "description": "Optional search keyword" },
+          "env": { "type": "string", "description": "Target environment profile" }
+        }
+      }
+    },
+    {
+      "name": "dubbo_get_service_detail",
+      "description": "Retrieve available methods, signatures, and provider details for a Dubbo interface",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "interfaceName": { "type": "string", "description": "Full interface name or service key" },
+          "version": { "type": "string", "description": "Optional service version" },
+          "group": { "type": "string", "description": "Optional service group" },
+          "env": { "type": "string", "description": "Target environment profile" }
+        },
+        "required": ["interfaceName"]
+      }
+    },
+    {
+      "name": "dubbo_invoke",
+      "description": "Invoke a Dubbo RPC service using generic invocation without any JAR dependencies. Returns result JSON.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "interfaceName": { "type": "string", "description": "Full interface name or service key" },
+          "method": { "type": "string", "description": "Target method name" },
+          "paramTypes": { "type": "array", "items": { "type": "string" }, "description": "Optional parameter types array" },
+          "args": { "type": "array", "description": "Arguments array" },
+          "version": { "type": "string", "description": "Optional service version" },
+          "group": { "type": "string", "description": "Optional service group" },
+          "env": { "type": "string", "description": "Target environment profile" }
+        },
+        "required": ["interfaceName", "method"]
+      }
+    },
+    {
+      "name": "dubbo_list_envs",
+      "description": "List all configured enterprise environments (test, uat, prod) and show the currently active one",
+      "inputSchema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "dubbo_switch_env",
+      "description": "Switch the active default environment for subsequent invocations",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "env": { "type": "string", "description": "Environment name to activate" }
+        },
+        "required": ["env"]
+      }
+    }
+  ]
+}

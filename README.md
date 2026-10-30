@@ -1,6 +1,14 @@
-# dubbo-mcp
+# Dubbo-MCP
 
 <p align="center">
+  <b>Enterprise Apache Dubbo RPC Bridge for Model Context Protocol (MCP) & AI Coding Agents</b><br>
+  <i>Connect Cursor, Claude Desktop, Claude Code, Windsurf, and Codex directly to your Dubbo microservices.</i>
+</p>
+
+<p align="center">
+  <a href="https://github.com/b1n9bna/dubbo-mcp/releases/latest"><img src="https://img.shields.io/github/v/release/b1n9bna/dubbo-mcp?style=flat-square&color=blue" alt="Latest Release"></a>
+  <img src="https://img.shields.io/badge/Model_Context_Protocol-MCP-green?style=flat-square" alt="MCP Compatible">
+  <a href="https://glama.ai/mcp/servers/b1n9bna/dubbo-mcp"><img src="https://glama.ai/mcp/servers/b1n9bna/dubbo-mcp/badges/score.svg" alt="Glama Score"></a>
   <img src="https://img.shields.io/badge/JDK-8_|_11_|_17_|_21-blue?style=flat-square&logo=openjdk" alt="JDK 8+">
   <img src="https://img.shields.io/badge/Cold_Start-<100_ms-brightgreen?style=flat-square&logo=lightning" alt="Cold Start">
   <img src="https://img.shields.io/badge/RAM_RSS-~25_MB-success?style=flat-square&logo=speedtest" alt="RAM RSS">
@@ -8,9 +16,9 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg?style=flat-square" alt="License"></a>
 </p>
 
-Dubbo-MCP 是连接 AI 编程助手（Codex、Cursor、Claude Code、ZCode 等）与 Dubbo 微服务的 [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) 服务端。
+Dubbo-MCP 是连接 AI 编程助手（Cursor、Claude Code、Claude Desktop、Codex CLI、Windsurf 等）与 Apache Dubbo 微服务的 [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) 官方协议服务端。
 
-在日常排查业务问题与联调时，让 AI 助手直接检索微服务接口、查看入参结构并发起接口调用，无需手动编写测试用例或引入业务工程依赖 Jar 包。
+在日常排查业务问题、接口联调与单元测试时，让 AI 助手直接检索微服务接口定义、反查复杂 DTO 入参结构并基于原生泛化调用（Generic Invocation）发起实时 RPC 调试，**无需手动编写测试用例，无需在本地工程引入任何业务 API 依赖 Jar 包**。
 
 ---
 
@@ -267,6 +275,24 @@ Dubbo-MCP 基于 Dubbo 原生泛化调用（Generic Invocation）：
 <summary><b>3. 生产环境登录态过期后如何处理？</b></summary>
 
 若企业 SSO 会话过期，接口调用会返回 401/403。此时只需在浏览器重新打开 Dubbo Admin 执行复制脚本，在终端重新执行 `dubbo-mcp login --clipboard` 即可。运行中的 MCP 进程会在下一次请求时自动热加载新凭据，无需重启 AI 助手。
+</details>
+
+<details>
+<summary><b>4. 如何在 Cursor 或 Claude Code 中直接发起 Dubbo 接口联调？</b></summary>
+
+执行 `dubbo-mcp install` 后，Cursor 会在 `~/.cursor/mcp.json` 中自动挂载服务。在 Cursor 对话框中直接输入自然语言，例如：
+* *"帮我查一下生产环境订单接口 `cn.corp.trade.OrderRpcService` 的入参格式"*
+* *"用测试环境调用 `UserServiceRpc.getUserById`，入参 userId=10001"*
+
+Cursor 将自动调用 `dubbo_get_service_detail` 获取签名，并调用 `dubbo_invoke` 执行泛化调用返回实时 JSON，全程无需离开编辑器。
+</details>
+
+<details>
+<summary><b>5. 相较于让浏览器 Agent 操作 Dubbo Admin 网页，为什么选择 MCP 协议？</b></summary>
+
+* **Token 消耗直降 98.6%**：单次排查实测仅需 **572 Token**，而视觉或 DOM 浏览器 Agent 多轮对话会复合累加产生 **33,000 ~ 40,000 Token**（参见上方基准图表）；
+* **毫秒级直接响应**：直连 RPC/API，避免了浏览器自动化中的网页加载、DOM 解析、模拟点击和截图延时（通常耗时 30~60 秒）；
+* **确定性与安全性**：杜绝了前端页面改版、弹窗漏点或 OCR 识别失误，且具备严格的只读正则守卫与敏感字段脱敏。
 </details>
 
 ---
