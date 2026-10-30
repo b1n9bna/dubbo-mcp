@@ -41,16 +41,32 @@ public class ProfileRouter {
     }
 
     public Object invoke(String env, String interfaceName, String method, String[] paramTypes, Object[] args, String version, String group) throws Exception {
+        return invoke(env, interfaceName, method, paramTypes, args, version, group, null);
+    }
+
+    public Object invoke(String env, String interfaceName, String method, String[] paramTypes, Object[] args, String version, String group, Map<String, String> attachments) throws Exception {
+        if (interfaceName != null && interfaceName.contains(" (app: ")) {
+            interfaceName = interfaceName.split(" \\(app: ")[0].trim();
+        }
         String targetEnv = resolveEnv(env);
 
         // 1. Safety check (blocks write operations if environment is read-only)
         SecurityGuard.checkSafety(targetEnv, interfaceName, method);
 
-        // 2. Execute RPC via appropriate driver
-        RpcDriver driver = getDriverForEnv(targetEnv);
-        Object rawResult = driver.invoke(interfaceName, method, paramTypes, args, version, group);
+        // 2. Resolve and merge attachments (default env attachments + call attachments)
+        Map<String, String> mergedAttachments = new LinkedHashMap<>(configManager.getEnvAttachments(targetEnv));
+        if (attachments != null && !attachments.isEmpty()) {
+            mergedAttachments.putAll(attachments);
+        }
+        if (!mergedAttachments.containsKey("mcp-caller")) {
+            mergedAttachments.put("mcp-caller", "dubbo-mcp");
+        }
 
-        // 3. Mask sensitive data if data_masking is enabled
+        // 3. Execute RPC via appropriate driver
+        RpcDriver driver = getDriverForEnv(targetEnv);
+        Object rawResult = driver.invoke(interfaceName, method, paramTypes, args, version, group, mergedAttachments);
+
+        // 4. Mask sensitive data if data_masking is enabled
         boolean mask = configManager.getBoolean("env." + targetEnv + ".data_masking", false);
         if (mask) {
             String jsonStr = JSON.toJSONString(rawResult);
@@ -67,6 +83,9 @@ public class ProfileRouter {
     }
 
     public Map<String, Object> getServiceMetadata(String env, String interfaceName) {
+        if (interfaceName != null && interfaceName.contains(" (app: ")) {
+            interfaceName = interfaceName.split(" \\(app: ")[0].trim();
+        }
         String targetEnv = resolveEnv(env);
         return getDriverForEnv(targetEnv).getServiceMetadata(interfaceName);
     }
@@ -88,6 +107,9 @@ public class ProfileRouter {
     }
 
     public Map<String, Object> getServiceMetadata(String env, String iface, String version, String group) {
+        if (iface != null && iface.contains(" (app: ")) {
+            iface = iface.split(" \\(app: ")[0].trim();
+        }
         return getDriverForEnv(resolveEnv(env)).getServiceMetadata(iface, version, group);
     }
 

@@ -13,6 +13,7 @@ import org.apache.dubbo.common.URL;
 import org.apache.dubbo.config.ApplicationConfig;
 import org.apache.dubbo.config.ReferenceConfig;
 import org.apache.dubbo.config.RegistryConfig;
+import org.apache.dubbo.rpc.RpcContext;
 import org.apache.dubbo.rpc.service.GenericService;
 
 import java.net.URLDecoder;
@@ -37,6 +38,7 @@ public class DubboDirectDriver implements RpcDriver {
     private final Map<String, ReferenceConfig<GenericService>> referenceCache = new ConcurrentHashMap<>();
     private final Map<String, GenericService> genericServiceCache = new ConcurrentHashMap<>();
     private final Map<String, JSONObject> metadataCache = new ConcurrentHashMap<>();
+    private final Map<String, String> appNameCache = new ConcurrentHashMap<>();
     private CuratorFramework curatorClient;
 
     public DubboDirectDriver(String env) {
@@ -70,6 +72,14 @@ public class DubboDirectDriver implements RpcDriver {
 
     @Override
     public Object invoke(String interfaceName, String method, String[] paramTypes, Object[] args, String version, String group) throws Exception {
+        return invoke(interfaceName, method, paramTypes, args, version, group, null);
+    }
+
+    @Override
+    public Object invoke(String interfaceName, String method, String[] paramTypes, Object[] args, String version, String group, Map<String, String> attachments) throws Exception {
+        if (interfaceName != null && interfaceName.contains(" (app: ")) {
+            interfaceName = interfaceName.split(" \\(app: ")[0].trim();
+        }
         // Resolve version and group: explicit -> config default -> auto-detect from ZK
         String[] service = resolveService(interfaceName, version, group);
         String resolvedVersion = service[0], resolvedGroup = service[1];
@@ -82,14 +92,31 @@ public class DubboDirectDriver implements RpcDriver {
             args = new Object[0];
         }
         for (int i = 0; i < args.length; i++) {
-            if (resolvedParamTypes != null && i < resolvedParamTypes.length && !"java.lang.String".equals(resolvedParamTypes[i]) && args[i] instanceof String) {
-                String str = ((String) args[i]).trim();
-                if (str.startsWith("{") || str.startsWith("[")) {
-                    try { args[i] = JSON.parse(str); } catch (Exception ignored) {}
-                }
+            if (resolvedParamTypes != null && i < resolvedParamTypes.length) {
+                args[i] = TypeCoercion.coerce(args[i], resolvedParamTypes[i]);
             }
         }
-        return genericService.$invoke(method, resolvedParamTypes, args);
+        if (attachments != null && !attachments.isEmpty()) {
+            RpcContext.getContext().setAttachments(attachments);
+        }
+        try {
+            return genericService.$invoke(method, resolvedParamTypes, args);
+        } catch (Exception e) {
+            throw enhanceException(e, interfaceName, method);
+        } finally {
+            RpcContext.getContext().clearAttachments();
+        }
+    }
+
+    static Exception enhanceException(Exception e, String iface, String method) {
+        String msg = e.getMessage();
+        if (msg != null && (msg.contains("Available methods:") || msg.contains("Not found method"))) {
+            int idx = msg.indexOf("Available methods:");
+            String available = idx >= 0 ? msg.substring(idx) : msg;
+            return new IllegalArgumentException("Dubbo method signature mismatch for " + iface + "." + method +
+                    ". " + available + ". Specify 'paramTypes' matching one of the available signatures.", e);
+        }
+        return e;
     }
 
     private String[] resolveParamTypes(String interfaceName, String method, String[] paramTypes, Object[] args, String version, String group) {
@@ -178,6 +205,9 @@ public class DubboDirectDriver implements RpcDriver {
     }
 
     private String[] resolveService(String iface, String version, String group) {
+        if (iface != null && iface.contains(" (app: ")) {
+            iface = iface.split(" \\(app: ")[0].trim();
+        }
         ConfigManager cfg = ConfigManager.getInstance();
         if (version == null) version = cfg.getProperty("env." + env + ".version");
         if (group == null) group = cfg.getProperty("env." + env + ".group");
@@ -208,6 +238,27 @@ public class DubboDirectDriver implements RpcDriver {
         throw new IllegalArgumentException("Multiple provider versions/groups for " + iface + ": " + candidates + "; specify version and group");
     }
 
+    private String getApplicationName(CuratorFramework client, String serviceName) {
+        return appNameCache.computeIfAbsent(serviceName, s -> {
+            try {
+                String path = "/dubbo/" + s + "/providers";
+                if (client.checkExists().forPath(path) != null) {
+                    List<String> children = client.getChildren().forPath(path);
+                    if (children != null && !children.isEmpty()) {
+                        String decoded = URLDecoder.decode(children.get(0), "UTF-8");
+                        URL url = URL.valueOf(decoded);
+                        String app = url.getParameter("application");
+                        if (app != null && !app.isEmpty()) {
+                            return app;
+                        }
+                    }
+                }
+            } catch (Exception ignored) {
+            }
+            return "";
+        });
+    }
+
     @Override
     public List<String> listServices(String keyword) {
         List<String> results = new ArrayList<>();
@@ -219,10 +270,23 @@ public class DubboDirectDriver implements RpcDriver {
         try {
             if (client.checkExists().forPath("/dubbo") != null) {
                 List<String> children = client.getChildren().forPath("/dubbo");
-                String lowerKeyword = keyword != null ? keyword.toLowerCase() : "";
+                String lowerKeyword = keyword != null ? keyword.toLowerCase(Locale.ROOT).trim() : "";
                 for (String serviceName : children) {
-                    if (serviceName.contains(".") && (lowerKeyword.isEmpty() || serviceName.toLowerCase(Locale.ROOT).contains(lowerKeyword))) {
-                        results.add(serviceName);
+                    if (!serviceName.contains(".")) continue;
+
+                    boolean nameMatches = lowerKeyword.isEmpty() || serviceName.toLowerCase(Locale.ROOT).contains(lowerKeyword);
+                    String app = "";
+                    if (nameMatches) {
+                        app = appNameCache.getOrDefault(serviceName, "");
+                        if (app.isEmpty() && !lowerKeyword.isEmpty()) {
+                            app = getApplicationName(client, serviceName);
+                        }
+                        results.add(app.isEmpty() ? serviceName : serviceName + " (app: " + app + ")");
+                    } else {
+                        app = getApplicationName(client, serviceName);
+                        if (!app.isEmpty() && app.toLowerCase(Locale.ROOT).contains(lowerKeyword)) {
+                            results.add(serviceName + " (app: " + app + ")");
+                        }
                     }
                 }
             }
@@ -235,6 +299,9 @@ public class DubboDirectDriver implements RpcDriver {
 
     @Override
     public Map<String, Object> getServiceMetadata(String interfaceName) {
+        if (interfaceName != null && interfaceName.contains(" (app: ")) {
+            interfaceName = interfaceName.split(" \\(app: ")[0].trim();
+        }
         Map<String, Object> meta = new LinkedHashMap<>();
         meta.put("interface", interfaceName);
 
@@ -293,6 +360,7 @@ public class DubboDirectDriver implements RpcDriver {
         JSONObject metaReport = versions.size() <= 1 && groups.size() <= 1
                 ? fetchServiceMetadata(interfaceName, versions.isEmpty() ? null : versions.iterator().next(), groups.isEmpty() ? null : groups.iterator().next()) : null;
         if (metaReport != null) {
+            meta.put("metadataReport", "AVAILABLE");
             if (metaReport.containsKey("methods")) {
                 JSONArray mArr = metaReport.getJSONArray("methods");
                 List<Map<String, Object>> methodDetails = new ArrayList<>();
@@ -321,17 +389,29 @@ public class DubboDirectDriver implements RpcDriver {
                     meta.put("typeProperties", typeMap);
                 }
             }
+        } else {
+            meta.put("metadataReport", "ABSENT");
+            meta.put("_hint", "Metadata-Report is not configured in this Dubbo cluster. Parameter types are empty. You can invoke methods by passing 'paramTypes' or rely on provider reflection hints if a mismatch occurs.");
         }
         return meta;
     }
 
     @Override public Map<String, Object> getServiceMetadata(String iface, String version, String group) {
+        if (iface != null && iface.contains(" (app: ")) {
+            iface = iface.split(" \\(app: ")[0].trim();
+        }
         if (version == null && group == null) return getServiceMetadata(iface);
         String[] identity = resolveService(iface, version, group);
         Map<String,Object> result = new LinkedHashMap<>();
         result.put("interface", iface); result.put("version", identity[0]); result.put("group", identity[1]);
         JSONObject details = fetchServiceMetadata(iface, identity[0], identity[1]);
-        if (details != null) result.put("metadata", details);
+        if (details != null) {
+            result.put("metadata", details);
+            result.put("metadataReport", "AVAILABLE");
+        } else {
+            result.put("metadataReport", "ABSENT");
+            result.put("_hint", "Metadata-Report is not configured in this Dubbo cluster for version=" + identity[0] + ", group=" + identity[1]);
+        }
         return result;
     }
 
@@ -381,7 +461,7 @@ public class DubboDirectDriver implements RpcDriver {
 
     public synchronized void close() {
         for (ReferenceConfig<GenericService> reference : referenceCache.values()) reference.destroy();
-        referenceCache.clear(); genericServiceCache.clear(); metadataCache.clear();
+        referenceCache.clear(); genericServiceCache.clear(); metadataCache.clear(); appNameCache.clear();
         if (curatorClient != null) { curatorClient.close(); curatorClient = null; }
     }
 }

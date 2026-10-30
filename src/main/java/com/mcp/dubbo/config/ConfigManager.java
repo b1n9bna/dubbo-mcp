@@ -106,6 +106,38 @@ public class ConfigManager {
         properties.setProperty("active.env", env);
     }
 
+    public java.util.Map<String, String> getEnvAttachments(String env) {
+        java.util.Map<String, String> attachments = new java.util.LinkedHashMap<>();
+        if (env == null || env.trim().isEmpty()) return attachments;
+        String prefix = "env." + env.trim() + ".attachment.";
+        for (String key : properties.stringPropertyNames()) {
+            if (key.startsWith(prefix)) {
+                String attachKey = key.substring(prefix.length());
+                if (!attachKey.isEmpty()) {
+                    attachments.put(attachKey, properties.getProperty(key));
+                }
+            }
+        }
+        for (String key : System.getProperties().stringPropertyNames()) {
+            if (key.startsWith(prefix)) {
+                String attachKey = key.substring(prefix.length());
+                if (!attachKey.isEmpty()) {
+                    attachments.put(attachKey, System.getProperty(key));
+                }
+            }
+        }
+        String envPrefix = "ENV_" + env.trim().toUpperCase(java.util.Locale.ROOT) + "_ATTACHMENT_";
+        for (java.util.Map.Entry<String, String> entry : System.getenv().entrySet()) {
+            if (entry.getKey().startsWith(envPrefix)) {
+                String attachKey = entry.getKey().substring(envPrefix.length()).toLowerCase(java.util.Locale.ROOT);
+                if (!attachKey.isEmpty()) {
+                    attachments.put(attachKey, entry.getValue());
+                }
+            }
+        }
+        return attachments;
+    }
+
     public Properties getRawProperties() {
         return properties;
     }

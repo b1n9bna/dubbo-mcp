@@ -62,7 +62,9 @@ public class TwoStageToolRegistry {
         invokeProps.put("interfaceName", paramProp("string", "Target interface name (e.g. 'cn.corp.trade.OrderService')"));
         invokeProps.put("method", paramProp("string", "Target method name to invoke"));
         invokeProps.put("paramTypes", arrayProp("string", "Optional parameter types array (e.g. ['java.lang.String']). If omitted, auto-inferred from metadata."));
-        invokeProps.put("args", paramProp("array", "Arguments array matching method parameters (supports primitives and JSON objects)"));
+        invokeProps.put("args", paramProp("array", "Arguments array matching method parameters (supports primitives and JSON objects). Pass large numeric IDs like orderId as strings to prevent precision loss."));
+        invokeProps.put("jsonPath", paramProp("string", "Optional JSONPath expression (e.g. '$.data.status', '$.data.items[*].skuName') to project only relevant fields and prevent context window exhaustion."));
+        invokeProps.put("attachments", paramProp("object", "Optional Dubbo RpcContext implicit attachments map (e.g. {'tenantId': '1001', 'operator': 'AI-Agent'}). Merged with environment defaults."));
         invokeProps.put("version", paramProp("string", "Optional Dubbo service version"));
         invokeProps.put("group", paramProp("string", "Optional Dubbo service group"));
         invokeProps.put("env", paramProp("string", "Target environment profile (test / uat / prod)"));
@@ -142,6 +144,9 @@ public class TwoStageToolRegistry {
                 if (iface == null || iface.trim().isEmpty()) {
                     throw new IllegalArgumentException("interfaceName is required");
                 }
+                if (iface.contains(" (app: ")) {
+                    iface = iface.split(" \\(app: ")[0].trim();
+                }
                 Map<String, Object> meta = profileRouter.getServiceMetadata(env, iface.trim(), (String) arguments.get("version"), (String) arguments.get("group"));
                 return JSON.toJSONString(meta);
             }
@@ -151,6 +156,9 @@ public class TwoStageToolRegistry {
                 String method = (String) arguments.get("method");
                 if (iface == null || iface.trim().isEmpty() || method == null || method.trim().isEmpty()) {
                     throw new IllegalArgumentException("interfaceName and method are required");
+                }
+                if (iface.contains(" (app: ")) {
+                    iface = iface.split(" \\(app: ")[0].trim();
                 }
 
                 boolean hasParamTypes = arguments.get("paramTypes") != null;
@@ -171,15 +179,32 @@ public class TwoStageToolRegistry {
                 }
                 String version = (String) arguments.get("version");
                 String group = (String) arguments.get("group");
+                Map<String, String> attachments = parseAttachments(arguments.get("attachments"));
 
-                Object result = profileRouter.invoke(env, iface.trim(), method.trim(), paramTypes, args, version, group);
+                Object result = profileRouter.invoke(env, iface.trim(), method.trim(), paramTypes, args, version, group, attachments);
+
+                String jsonPath = (String) arguments.get("jsonPath");
+                if (jsonPath != null && !jsonPath.trim().isEmpty()) {
+                    try {
+                        result = com.alibaba.fastjson2.JSONPath.eval(result, jsonPath.trim());
+                    } catch (Exception e) {
+                        throw new IllegalArgumentException("Invalid jsonPath expression '" + jsonPath + "': " + e.getMessage());
+                    }
+                }
+
                 JSONObject wrapper = new JSONObject();
                 wrapper.put("status", "SUCCESS");
                 wrapper.put("env", profileRouter.resolveEnv(env));
                 wrapper.put("interface", iface.trim());
                 wrapper.put("method", method.trim());
                 wrapper.put("data", result);
-                return wrapper.toJSONString();
+                String jsonOutput = wrapper.toJSONString();
+
+                int maxBytes = configManager.getInt("mcp.max_response_bytes", 24576);
+                if (jsonOutput.length() > maxBytes) {
+                    return formatTruncatedPayload(wrapper, jsonOutput.length(), maxBytes);
+                }
+                return jsonOutput;
             }
 
             case "dubbo_list_envs": {
@@ -235,5 +260,81 @@ public class TwoStageToolRegistry {
         }
         // Graceful single argument wrapping if LLM passes single object/primitive instead of array
         return new Object[]{ obj };
+    }
+
+    static Map<String, String> parseAttachments(Object obj) {
+        if (obj == null) return null;
+        if (obj instanceof String) {
+            String str = ((String) obj).trim();
+            if (str.startsWith("{")) {
+                try {
+                    obj = com.alibaba.fastjson2.JSON.parse(str);
+                } catch (Exception ignored) {
+                }
+            }
+        }
+        if (obj instanceof Map) {
+            Map<String, String> map = new LinkedHashMap<>();
+            for (Map.Entry<?, ?> entry : ((Map<?, ?>) obj).entrySet()) {
+                if (entry.getKey() != null && entry.getValue() != null) {
+                    map.put(entry.getKey().toString(), entry.getValue().toString());
+                }
+            }
+            return map;
+        }
+        return null;
+    }
+
+    public static String formatTruncatedPayload(JSONObject wrapper, int originalSize, int maxBytes) {
+        Object data = wrapper.get("data");
+        Object truncatedData = truncateRecursive(data, 0);
+        JSONObject guarded = new JSONObject();
+        guarded.put("status", "SUCCESS_TRUNCATED");
+        guarded.put("env", wrapper.getString("env"));
+        guarded.put("interface", wrapper.getString("interface"));
+        guarded.put("method", wrapper.getString("method"));
+        guarded.put("_warning", "Payload exceeded safe limit (" + (originalSize / 1024) + " KB > " + (maxBytes / 1024) + " KB). Large arrays and deep structures were summarized to protect LLM context window.");
+        guarded.put("_hint", "Use the 'jsonPath' argument in dubbo_invoke (e.g. '$.data.status', '$.data.items[*].skuName') to retrieve specific nested fields without truncation.");
+        guarded.put("data", truncatedData);
+        String res = guarded.toJSONString();
+        if (res.length() > maxBytes) {
+            guarded.put("data", Collections.singletonMap("_truncated", "Content deeply truncated due to extreme size; use jsonPath to query specific paths"));
+            return guarded.toJSONString();
+        }
+        return res;
+    }
+
+    private static Object truncateRecursive(Object obj, int depth) {
+        if (depth > 4) return "... [deep object omitted]";
+        if (obj instanceof String) {
+            String str = (String) obj;
+            if (str.length() > 500) {
+                return str.substring(0, 500) + "... [truncated " + (str.length() - 500) + " chars]";
+            }
+            return str;
+        }
+        if (obj instanceof List) {
+            List<?> list = (List<?>) obj;
+            if (list.size() <= 2) {
+                List<Object> copy = new ArrayList<>();
+                for (Object item : list) copy.add(truncateRecursive(item, depth + 1));
+                return copy;
+            }
+            List<Object> copy = new ArrayList<>();
+            copy.add(truncateRecursive(list.get(0), depth + 1));
+            if (list.size() > 1) copy.add(truncateRecursive(list.get(1), depth + 1));
+            copy.add("... [" + (list.size() - 2) + " more items truncated; use jsonPath to extract]");
+            return copy;
+        }
+        if (obj instanceof Map) {
+            Map<?, ?> map = (Map<?, ?>) obj;
+            Map<String, Object> copy = new LinkedHashMap<>();
+            for (Map.Entry<?, ?> entry : map.entrySet()) {
+                String k = String.valueOf(entry.getKey());
+                copy.put(k, truncateRecursive(entry.getValue(), depth + 1));
+            }
+            return copy;
+        }
+        return obj;
     }
 }

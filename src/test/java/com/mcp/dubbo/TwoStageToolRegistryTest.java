@@ -115,4 +115,88 @@ public class TwoStageToolRegistryTest {
             System.clearProperty("env.unittest.type");
         }
     }
+
+    @Test
+    public void testPayloadTruncationPreservesStructureAndReturnsValidJson() {
+        com.alibaba.fastjson2.JSONObject wrapper = new com.alibaba.fastjson2.JSONObject();
+        wrapper.put("status", "SUCCESS");
+        wrapper.put("env", "test");
+        wrapper.put("interface", "com.foo.OrderService");
+        wrapper.put("method", "queryLargeOrders");
+
+        java.util.List<Map<String, Object>> items = new java.util.ArrayList<>();
+        for (int i = 0; i < 50; i++) {
+            Map<String, Object> item = new HashMap<>();
+            item.put("id", 1000L + i);
+            item.put("sku", "SKU-" + i);
+            item.put("description", "A very long detailed product description meant to consume bytes " + i);
+            items.add(item);
+        }
+        Map<String, Object> data = new HashMap<>();
+        data.put("total", 50);
+        data.put("items", items);
+        wrapper.put("data", data);
+
+        String originalJson = wrapper.toJSONString();
+        int originalSize = originalJson.length();
+        int maxBytes = 2000; // Force truncation
+
+        String truncated = TwoStageToolRegistry.formatTruncatedPayload(wrapper, originalSize, maxBytes);
+        com.alibaba.fastjson2.JSONObject parsed = com.alibaba.fastjson2.JSON.parseObject(truncated);
+
+        Assert.assertEquals("SUCCESS_TRUNCATED", parsed.getString("status"));
+        Assert.assertNotNull(parsed.getString("_warning"));
+        Assert.assertNotNull(parsed.getString("_hint"));
+        Assert.assertTrue(parsed.getString("_hint").contains("jsonPath"));
+
+        com.alibaba.fastjson2.JSONObject dataObj = parsed.getJSONObject("data");
+        Assert.assertNotNull(dataObj);
+        com.alibaba.fastjson2.JSONArray truncatedItems = dataObj.getJSONArray("items");
+        Assert.assertNotNull(truncatedItems);
+        // First 2 items preserved, 3rd is truncation notice
+        Assert.assertEquals(3, truncatedItems.size());
+        Assert.assertTrue(truncatedItems.getString(2).contains("more items truncated"));
+    }
+
+    @Test
+    public void testParseAttachmentsMapAndJsonString() throws Exception {
+        java.lang.reflect.Method m = TwoStageToolRegistry.class.getDeclaredMethod("parseAttachments", Object.class);
+        m.setAccessible(true);
+
+        // 1. Null check
+        Assert.assertNull(m.invoke(null, (Object) null));
+
+        // 2. Map input
+        Map<String, Object> map = new HashMap<>();
+        map.put("tenantId", "tenant_001");
+        map.put("traceId", 12345L);
+        @SuppressWarnings("unchecked")
+        Map<String, String> parsedMap = (Map<String, String>) m.invoke(null, map);
+        Assert.assertEquals("tenant_001", parsedMap.get("tenantId"));
+        Assert.assertEquals("12345", parsedMap.get("traceId"));
+
+        // 3. JSON string input
+        String json = "{\"operator\":\"admin\",\"envTag\":\"gray\"}";
+        @SuppressWarnings("unchecked")
+        Map<String, String> parsedJson = (Map<String, String>) m.invoke(null, json);
+        Assert.assertEquals("admin", parsedJson.get("operator"));
+        Assert.assertEquals("gray", parsedJson.get("envTag"));
+    }
+
+    @Test
+    public void testJsonPathExpressionEvaluation() {
+        Map<String, Object> order = new HashMap<>();
+        order.put("orderId", "202610080001");
+        order.put("amount", 299.99);
+        Map<String, Object> customer = new HashMap<>();
+        customer.put("name", "Alice");
+        customer.put("vip", true);
+        order.put("customer", customer);
+
+        Object projectedName = com.alibaba.fastjson2.JSONPath.eval(order, "$.customer.name");
+        Assert.assertEquals("Alice", projectedName);
+
+        Object projectedId = com.alibaba.fastjson2.JSONPath.eval(order, "$.orderId");
+        Assert.assertEquals("202610080001", projectedId);
+    }
 }

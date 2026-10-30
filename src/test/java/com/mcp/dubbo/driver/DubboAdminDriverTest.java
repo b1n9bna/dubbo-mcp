@@ -136,4 +136,36 @@ public class DubboAdminDriverTest {
         Assert.assertTrue("Parameter must be unpacked into a JSONObject", param instanceof JSONObject);
         Assert.assertEquals(123, ((JSONObject) param).getIntValue("id"));
     }
+    @Test public void testInvokeWithAttachmentsPropagatesToPayload() throws Exception {
+        Map<String, String> attachments = new HashMap<>();
+        attachments.put("tenantId", "tenant_999");
+        attachments.put("mcp-caller", "dubbo-mcp");
+        Object result = driver.invoke("com.example.Service", "query", null, new Object[]{new HashMap<>()}, null, null, attachments);
+        Assert.assertTrue(((JSONObject)result).getBooleanValue("success"));
+        Assert.assertNotNull(invocation.getJSONObject("attachments"));
+        Assert.assertEquals("tenant_999", invocation.getJSONObject("attachments").getString("tenantId"));
+        Assert.assertEquals("dubbo-mcp", invocation.getJSONObject("attachments").getString("mcp-caller"));
+    }
+    @Test public void testTypeCoercionInInvoke() throws Exception {
+        Object result = driver.invoke("com.example.Service", "query", new String[]{"java.lang.Long"}, new Object[]{"202610080001"}, null, null, null);
+        Assert.assertTrue(((JSONObject)result).getBooleanValue("success"));
+        Object param = invocation.getJSONArray("params").get(0);
+        Assert.assertEquals(202610080001L, ((Number) param).longValue());
+    }
+    @Test public void testApplicationNameExtractedAndSearchable() throws Exception {
+        String json = "[{\"service\":\"cn.corp.oms.OrderService\",\"application\":\"oms-provider\"}]";
+        java.lang.reflect.Method m = DubboAdminDriver.class.getDeclaredMethod("extractServiceNames", Object.class);
+        m.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        List<String> list = (List<String>) m.invoke(null, JSON.parse(json));
+        Assert.assertEquals(1, list.size());
+        Assert.assertEquals("cn.corp.oms.OrderService (app: oms-provider)", list.get(0));
+    }
+    @Test public void testEnhanceAdminExceptionCapturesAvailableMethods() {
+        Exception raw = new RuntimeException("com.alibaba.dubbo.rpc.RpcException: Failed to invoke. Available methods: [getOrderDetail(cn.corp.oms.dto.OrderRequest)]");
+        Exception enhanced = DubboAdminDriver.enhanceAdminException(raw, "cn.corp.oms.OrderService", "getOrderDetail");
+        Assert.assertTrue(enhanced instanceof IllegalArgumentException);
+        Assert.assertTrue(enhanced.getMessage().contains("Dubbo method signature mismatch"));
+        Assert.assertTrue(enhanced.getMessage().contains("Available methods: [getOrderDetail(cn.corp.oms.dto.OrderRequest)]"));
+    }
 }

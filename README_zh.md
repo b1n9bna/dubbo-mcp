@@ -209,19 +209,24 @@ args = []
 
 | 工具名 | 参数 | 说明 |
 | :--- | :--- | :--- |
-| `dubbo_list_services` | `keyword` (可选) | 按关键字搜索注册中心上的 Dubbo 服务接口 |
-| `dubbo_get_service_detail` | `service` | 获取接口的方法列表、参数类型、DTO 字段属性及版本/分组信息 |
-| `dubbo_invoke` | `service`, `method`, `args`, `env` (可选), `version` (可选), `group` (可选) | 发起接口调用，传入 JSON 入参，返回服务端的执行结果 |
+| `dubbo_list_services` | `keyword` (可选) | 按关键字搜索 Dubbo 服务接口（支持双轨匹配：Java 接口包名 + 服务端 application 应用名） |
+| `dubbo_get_service_detail` | `service` | 获取接口的方法列表、参数类型、DTO 字段属性、元数据可用性及版本/分组信息 |
+| `dubbo_invoke` | `service`, `method`, `args`, `paramTypes` (可选), `attachments` (可选), `jsonPath` (可选), `env` (可选), `version` (可选), `group` (可选) | 发起接口调用，内置类型强转容错、隐式参数透传及可选的 JSONPath 字段投影 |
 | `dubbo_list_envs` | 无 | 查看已配置的环境列表及当前激活的环境 |
 | `dubbo_switch_env` | `env` | 切换当前默认环境（如 `test` / `uat` / `prod`） |
 
 ---
 
-## 🛡️ 安全控制
+## 🛡️ 企业级生产健壮性与调用容错
 
-为防止误操作影响线上稳定性，针对生产环境提供了两项保护机制：
-1. **只读方法校验**：在开启 `readonly=true` 的环境中，仅允许执行匹配 `security.readonly.regex` 正则的方法（如 `get*`、`query*`、`find*` 等只读前缀），写操作（如 `update*`、`delete*`）会被直接拦截；
-2. **敏感数据脱敏**：开启 `data_masking=true` 后，自动对返回值中的手机号（`138****5678`）和 18 位身份证（`110101********2345`）进行掩码脱敏，防止敏感数据进入对话上下文。
+为解决大模型在生产级企业微服务调用中的真实痛点，内置五大高阶保护机制：
+1. **应用名双轨检索**：用户输入“查 oms 的订单”时，即使接口名为 `cn.wangoon.trade.OrderRpcService`，也能通过服务端 application 属性匹配并展示 `cn.wangoon.trade.OrderRpcService (app: oms-provider)`；
+2. **雪花 ID 精度防丢失与类型强转**：支持将 18~19 位超长数值单号以字符串形式传入（避免 JavaScript 53 位浮点数溢出截断），底层自动强转为 Java `Long`/`BigDecimal`；
+3. **隐式参数透传（`RpcContext` Attachments）**：支持在请求中或配置文件（`env.<env>.attachment.<key>`）中注入租户号 `tenantId`、链路追踪 `traceId` 及灰度标；
+4. **大 JSON 上下文防打爆与 JSONPath**：返回报文超过 24KB 时自动进行结构化安全缩略，保留关键信封与字段，并支持通过 `jsonPath`（如 `$.data.items[0]`）进行精准投影；
+5. **弱元数据集群反射自愈**：集群未开启元数据中心时，通过解析 Dubbo 服务端反馈的 `Available methods: [...]` 错误提示，指导大模型在下一轮对话中自动修正方法签名自愈调用；
+6. **只读方法校验**：开启 `readonly=true` 的环境拦截非只读操作（如 `update*`、`delete*`）；
+7. **敏感数据脱敏**：开启 `data_masking=true` 自动对手机号与身份证进行掩码脱敏。
 
 ---
 

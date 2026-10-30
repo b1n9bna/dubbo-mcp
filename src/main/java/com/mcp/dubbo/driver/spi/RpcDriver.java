@@ -34,6 +34,13 @@ public interface RpcDriver {
     }
 
     /**
+     * Executes a generic RPC invocation with version, group, and RpcContext attachments.
+     */
+    default Object invoke(String interfaceName, String method, String[] paramTypes, Object[] args, String version, String group, Map<String, String> attachments) throws Exception {
+        return invoke(interfaceName, method, paramTypes, args, version, group);
+    }
+
+    /**
      * Searches or lists registered services matching the given keyword.
      */
     List<String> listServices(String keyword);

@@ -39,6 +39,8 @@ STAGED_JAR=$(mktemp "$INSTALL_DIR/dubbo-mcp.XXXXXX")
 trap 'rm -f "$STAGED_JAR"' EXIT HUP INT TERM
 if [ -f "./target/dubbo-mcp.jar" ]; then
     cp "./target/dubbo-mcp.jar" "$STAGED_JAR"
+elif [ -f "./target/dubbo-mcp-1.0.2.jar" ]; then
+    cp "./target/dubbo-mcp-1.0.2.jar" "$STAGED_JAR"
 elif [ -f "./target/dubbo-mcp-1.0.1.jar" ]; then
     cp "./target/dubbo-mcp-1.0.1.jar" "$STAGED_JAR"
 elif [ -f "./target/dubbo-mcp-1.0.0-SNAPSHOT.jar" ]; then

@@ -70,7 +70,7 @@ public class StdioJsonRpcServer {
             case "initialize": {
                 Map<String, Object> serverInfo = new LinkedHashMap<>();
                 serverInfo.put("name", "dubbo-mcp");
-                serverInfo.put("version", "1.0.1");
+                serverInfo.put("version", "1.0.2");
 
                 Map<String, Object> capabilities = new LinkedHashMap<>();
                 capabilities.put("tools", Collections.emptyMap());

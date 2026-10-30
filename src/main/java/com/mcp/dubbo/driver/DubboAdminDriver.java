@@ -206,6 +206,7 @@ public class DubboAdminDriver implements RpcDriver {
         Set<String> names = new LinkedHashSet<>();
         for (Object item : array) {
             String name = null;
+            String app = null;
             if (item instanceof String) {
                 name = (String) item;
             } else if (item instanceof JSONObject) {
@@ -218,15 +219,26 @@ public class DubboAdminDriver implements RpcDriver {
                 if (name == null) name = obj.getString("interfaceName");
                 if (name == null) name = obj.getString("name");
                 if (name == null) name = obj.getString("interface");
+
+                app = obj.getString("application");
+                if (app == null) app = obj.getString("app");
+                if (app == null) app = obj.getString("appName");
             }
             if (name != null && !name.trim().isEmpty()) {
-                names.add(name.trim());
+                String cleanName = name.trim();
+                if (app != null && !app.trim().isEmpty() && !cleanName.contains(" (app: ")) {
+                    cleanName = cleanName + " (app: " + app.trim() + ")";
+                }
+                names.add(cleanName);
             }
         }
         return new ArrayList<>(names);
     }
 
     private String serviceKey(String iface, String version, String group, String cred) throws Exception {
+        if (iface != null && iface.contains(" (app: ")) {
+            iface = iface.split(" \\(app: ")[0].trim();
+        }
         // A fully qualified service key can be supplied directly.
         if (iface.contains(":") || iface.contains("/")) {
             if (version != null || group != null) throw new IllegalArgumentException("Use either a full service key or separate version/group");
@@ -341,32 +353,71 @@ public class DubboAdminDriver implements RpcDriver {
     @Override public Map<String, Object> getServiceMetadata(String iface) { return getServiceMetadata(iface, null, null); }
     @Override public Map<String, Object> getServiceMetadata(String iface, String version, String group) {
         try {
+            if (iface != null && iface.contains(" (app: ")) {
+                iface = iface.split(" \\(app: ")[0].trim();
+            }
             String cred = credential(), key = serviceKey(iface, version, group, cred);
             Object detail = request(detailPath(key), null, cred);
             if (!(detail instanceof JSONObject)) throw new IllegalStateException("Unexpected service detail response");
-            Map<String, Object> result = new LinkedHashMap<>(); result.put("interface", iface); result.put("service", key); result.put("details", detail);
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("interface", iface);
+            result.put("service", key);
+            result.put("details", detail);
+            JSONObject metadata = extractMetadata((JSONObject) detail);
+            if (metadata == null || !metadata.containsKey("methods") || metadata.getJSONArray("methods") == null || metadata.getJSONArray("methods").isEmpty()) {
+                result.put("metadataReport", "ABSENT");
+                result.put("_hint", "Service metadata does not contain method signatures. Pass explicit 'paramTypes' when invoking.");
+            } else {
+                result.put("metadataReport", "AVAILABLE");
+            }
             return result;
         } catch (Exception e) { throw propagate(e); }
     }
-    @Override public Object invoke(String iface, String method, String[] types, Object[] args) throws Exception { return invoke(iface, method, types, args, null, null); }
+    @Override public Object invoke(String iface, String method, String[] types, Object[] args) throws Exception {
+        return invoke(iface, method, types, args, null, null, null);
+    }
     @Override public Object invoke(String iface, String method, String[] types, Object[] args, String version, String group) throws Exception {
+        return invoke(iface, method, types, args, version, group, null);
+    }
+    @Override public Object invoke(String iface, String method, String[] types, Object[] args, String version, String group, Map<String, String> attachments) throws Exception {
+        if (iface != null && iface.contains(" (app: ")) {
+            iface = iface.split(" \\(app: ")[0].trim();
+        }
         String cred = credential(), key = serviceKey(iface, version, group, cred);
-        Object[] values = args == null ? new Object[0] : args;
+        Object[] values = args == null ? new Object[0] : args.clone();
         JSONObject detail = (JSONObject) request(detailPath(key), null, cred);
         JSONObject metadata = extractMetadata(detail);
         types = MethodSignatures.resolve(metadata == null ? null : metadata.getJSONArray("methods"), method, types, values.length);
         for (int i = 0; i < values.length; i++) {
-            if (types != null && i < types.length && !"java.lang.String".equals(types[i]) && values[i] instanceof String) {
-                String str = ((String) values[i]).trim();
-                if (str.startsWith("{") || str.startsWith("[")) {
-                    try { values[i] = JSON.parse(str); } catch (Exception ignored) {}
-                }
+            if (types != null && i < types.length) {
+                values[i] = TypeCoercion.coerce(values[i], types[i]);
             }
         }
-        JSONObject payload = new JSONObject(); payload.put("service", key); payload.put("method", method);
-        payload.put("parameterTypes", types); payload.put("params", values);
+        JSONObject payload = new JSONObject();
+        payload.put("service", key);
+        payload.put("method", method);
+        payload.put("parameterTypes", types);
+        payload.put("params", values);
+        if (attachments != null && !attachments.isEmpty()) {
+            payload.put("attachments", attachments);
+        }
         // Never retry a test invocation: a timeout can occur after a mutation has completed.
-        return request("/test", payload, cred);
+        try {
+            return request("/test", payload, cred);
+        } catch (Exception e) {
+            throw enhanceAdminException(e, iface, method);
+        }
+    }
+
+    static Exception enhanceAdminException(Exception e, String iface, String method) {
+        String msg = e.getMessage();
+        if (msg != null && (msg.contains("Available methods:") || msg.contains("Not found method") || msg.contains("NoSuchMethodException"))) {
+            int idx = msg.indexOf("Available methods:");
+            String available = idx >= 0 ? msg.substring(idx) : msg;
+            return new IllegalArgumentException("Dubbo method signature mismatch for " + iface + "." + method +
+                    ". " + available + ". Specify 'paramTypes' matching one of the available signatures.", e);
+        }
+        return e;
     }
     private static RuntimeException propagate(Exception e) { return e instanceof RuntimeException ? (RuntimeException)e : new IllegalStateException(e.getMessage()); }
 }

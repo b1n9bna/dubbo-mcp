@@ -209,19 +209,24 @@ Once configured, interact with your microservices using plain natural language i
 
 | Tool Name | Parameters | Description |
 | :--- | :--- | :--- |
-| `dubbo_list_services` | `keyword` *(optional)* | Search registered Dubbo service interfaces on the registry |
+| `dubbo_list_services` | `keyword` *(optional)* | Search registered Dubbo service interfaces via dual-track matching (interface name + application name) |
 | `dubbo_get_service_detail` | `interfaceName`, `version` *(opt)*, `group` *(opt)* | Retrieve method lists, signatures, DTO field structures, and provider details |
-| `dubbo_invoke` | `interfaceName`, `method`, `args`, `env` *(opt)*, `version` *(opt)*, `group` *(opt)* | Invoke Dubbo RPC service with JSON arguments via generic invocation |
+| `dubbo_invoke` | `interfaceName`, `method`, `args`, `paramTypes` *(opt)*, `attachments` *(opt)*, `jsonPath` *(opt)*, `env` *(opt)*, `version` *(opt)*, `group` *(opt)* | Invoke Dubbo RPC service with automatic type coercion, implicit attachment injection, and optional JSONPath projection |
 | `dubbo_list_envs` | *none* | List all configured environments and show the currently active profile |
 | `dubbo_switch_env` | `env` | Switch the active default environment (`test` / `uat` / `prod`) |
 
 ---
 
-## 🛡️ Enterprise Safety Controls
+## 🛡️ Enterprise Production Reliability
 
-To safeguard production stability, two enterprise protective mechanisms are enforced:
-1. **Read-Only Method Regex Guard**: In environments with `readonly=true`, only method names matching `security.readonly.regex` (e.g. `get*`, `query*`, `find*`, `select*`) are executed. Mutating operations (`update*`, `delete*`, `save*`) are blocked immediately;
-2. **Sensitive Data Masking**: When `data_masking=true` is enabled, Chinese mobile numbers (`138****5678`) and 18-digit National IDs (`110101********2345`) are automatically masked in responses to prevent privacy data leakage into AI context windows.
+To safeguard production invocation and LLM stability:
+1. **Dual-Track Service Search**: User queries like "oms" match services by both interface package names and provider `application` names (e.g. `cn.wangoon.trade.OrderRpcService (app: oms-provider)`).
+2. **Precision Loss Prevention & Type Coercion**: 64-bit Snowflake IDs and order numbers passed as strings (e.g. `"202610080001"`) are safely coerced into `Long`, `BigDecimal`, or DTO maps without JavaScript 53-bit floating-point truncation.
+3. **Implicit Arguments (`RpcContext` Attachments)**: Forward multi-tenant IDs, trace IDs, and routing tags via request `attachments` or environment properties (`env.<env>.attachment.<key>`).
+4. **Context Explosion Protection & JSONPath**: Responses larger than 24KB are structured-truncated into valid JSON envelopes with extraction hints, and `jsonPath` (e.g. `$.data.items[0]`) allows targeted extraction.
+5. **Provider Signature Self-Healing**: When metadata reports are absent, provider reflection errors (`Available methods: [...]`) are transformed into actionable parameter type advice for zero-touch LLM self-healing.
+6. **Read-Only Method Regex Guard**: In environments with `readonly=true`, mutating operations (`update*`, `delete*`, `save*`) are blocked immediately.
+7. **Sensitive Data Masking**: Automatic masking for Chinese mobile numbers (`138****5678`) and National IDs (`110101********2345`).
 
 ---
 
