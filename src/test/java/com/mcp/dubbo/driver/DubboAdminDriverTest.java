@@ -26,8 +26,8 @@ public class DubboAdminDriverTest {
             else if (mode.equals("unauthorized")) { status=401; response="{}"; }
             else if (mode.equals("server-error")) { status=500; response="private backend error"; }
             else if (mode.equals("html")) response="<html>login</html>";
-            else if (path.endsWith("/services")) response=mode.equals("shape")?"{\"error\":true}":"[\"com.example.Service\"]";
-            else if (path.endsWith("/service")) response=mode.equals("ambiguous")?"[{\"service\":\"com.example.Service\",\"version\":\"1\"},{\"service\":\"com.example.Service\",\"version\":\"2\"}]":"[{\"service\":\"com.example.Service\",\"version\":\"1\",\"group\":\"blue\"}]";
+            else if (path.endsWith("/services")) response=mode.equals("shape")?"{\"error\":true}":mode.equals("paged")?"{\"content\":[\"com.example.Service\"]}":"[\"com.example.Service\"]";
+            else if (path.endsWith("/service")) response=mode.equals("ambiguous")?"[{\"service\":\"com.example.Service\",\"version\":\"1\"},{\"service\":\"com.example.Service\",\"version\":\"2\"}]":mode.equals("paged")?"{\"content\":[{\"service\":\"com.example.Service\",\"version\":\"1\",\"group\":\"blue\"}],\"pageable\":{},\"totalElements\":1}":"[{\"service\":\"com.example.Service\",\"version\":\"1\",\"group\":\"blue\"}]";
             else if (path.contains("/service/")) response="{\"service\":\"blue/com.example.Service:1\",\"metadata\":{\"methods\":[{\"name\":\"query\",\"parameterTypes\":[\"com.example.QueryDTO\"]}]}}";
             else if (path.endsWith("/test")) {
                 calls.incrementAndGet();
@@ -54,6 +54,15 @@ public class DubboAdminDriverTest {
         Assert.assertEquals("com.example.QueryDTO",invocation.getJSONArray("parameterTypes").getString(0));
         Assert.assertTrue(paths.contains("/dubbo-admin/api/dev/service/blue*com.example.Service:1"));
         Assert.assertEquals(1,calls.get());
+    }
+    @Test public void supportsPagedDubboAdminResponses() throws Exception {
+        mode = "paged";
+        Assert.assertEquals(Collections.singletonList("com.example.Service"), driver.listServices("example"));
+        Map<String, Object> detail = driver.getServiceMetadata("com.example.Service");
+        Assert.assertEquals("blue/com.example.Service:1", detail.get("service"));
+        Object result = driver.invoke("com.example.Service", "query", null, new Object[]{new HashMap<>()}, null, null);
+        Assert.assertTrue(((JSONObject)result).getBooleanValue("success"));
+        Assert.assertEquals("blue/com.example.Service:1", invocation.getString("service"));
     }
     @Test public void failuresAreNotEmptyResults() {
         for(String failure:Arrays.asList("unauthorized","server-error","html","shape")) {

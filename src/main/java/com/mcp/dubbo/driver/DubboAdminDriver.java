@@ -117,10 +117,23 @@ public class DubboAdminDriver implements RpcDriver {
             Collections.sort(services); return services;
         } catch (Exception e) { throw propagate(e); }
     }
+    static JSONArray toServiceArray(Object response) {
+        if (response instanceof JSONArray) return (JSONArray) response;
+        if (response instanceof JSONObject) {
+            JSONObject obj = (JSONObject) response;
+            if (obj.get("content") instanceof JSONArray) return obj.getJSONArray("content");
+            if (obj.get("data") instanceof JSONArray) return obj.getJSONArray("data");
+            if (obj.get("services") instanceof JSONArray) return obj.getJSONArray("services");
+            if (obj.get("result") instanceof JSONArray) return obj.getJSONArray("result");
+        }
+        return null;
+    }
+
     private static List<String> extractServiceNames(Object parsed) {
-        if (!(parsed instanceof JSONArray)) throw new IllegalStateException("Unexpected Dubbo Admin services response (expected array)");
+        JSONArray array = toServiceArray(parsed);
+        if (array == null) throw new IllegalStateException("Unexpected Dubbo Admin services response (expected array)");
         Set<String> names = new LinkedHashSet<>();
-        for (Object item : (JSONArray) parsed) {
+        for (Object item : array) {
             String name = item instanceof String ? (String) item : item instanceof JSONObject ? ((JSONObject)item).getString("service") : null;
             if (name == null) throw new IllegalStateException("Unexpected service entry in Dubbo Admin response");
             names.add(name);
@@ -140,9 +153,10 @@ public class DubboAdminDriver implements RpcDriver {
         HttpUrl query = new HttpUrl.Builder().scheme("http").host("localhost").addPathSegment("service")
                 .addQueryParameter("pattern", "service").addQueryParameter("filter", "*" + iface + "*").build();
         Object response = request(query.encodedPath() + "?" + query.encodedQuery(), null, cred);
-        if (!(response instanceof JSONArray)) throw new IllegalStateException("Unexpected Dubbo Admin service search response");
+        JSONArray rows = toServiceArray(response);
+        if (rows == null) throw new IllegalStateException("Unexpected Dubbo Admin service search response");
         Set<String> keys = new TreeSet<>();
-        for (Object item : (JSONArray)response) {
+        for (Object item : rows) {
             if (!(item instanceof JSONObject)) continue;
             JSONObject row = (JSONObject)item;
             String name = row.getString("service");
