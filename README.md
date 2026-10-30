@@ -94,6 +94,22 @@ security.readonly.regex=^(get|query|find|select|list|count|check|is|search|fetch
 
 ---
 
+## 生产环境鉴权登录（对接 dubbo-admin 时必配）
+
+企业内部的 Dubbo Admin 通常接入了统一单点登录（SSO/OAuth）。如果配置了生产环境（`env.prod.type=dubbo-admin`），首次使用前或会话过期后，需在终端执行一次登录命令保存凭据：
+
+1. **获取登录态**：在浏览器中打开已登录的 Dubbo Admin 控制台，按 <kbd>F12</kbd>（Mac 快捷键 <kbd>Cmd</kbd>+<kbd>Option</kbd>+<kbd>I</kbd>）打开控制台 Console，执行：
+   ```javascript
+   copy(JSON.stringify({cookie: document.cookie, authorization: localStorage.getItem('token') || localStorage.getItem('Admin-Token')}))
+   ```
+2. **终端保存凭据**：在终端直接执行（macOS 下 `--clipboard` 会自动从系统剪贴板读取，彻底避免长文本终端截断）：
+   ```bash
+   dubbo-mcp login --clipboard
+   ```
+   > 验证通过后凭据将保存在 `~/.dubbo-mcp/session-prod.json`（权限 `0600`）。MCP 进程调用时会自动读取该凭据，会话过期后重新执行上述命令即可，无需重启 AI 助手。
+
+---
+
 ## 客户端接入示例
 
 ### Codex
@@ -140,18 +156,11 @@ args = []
 
 ## 常见问题与说明
 
-### 1. 生产环境（dubbo-admin）如何处理 SSO 登录？
-若企业内部的 Dubbo Admin 接入了单点登录（飞书、企业微信、钉钉等）：
-1. 在浏览器中打开 Dubbo Admin 完成登录；
-2. 按 `F12` 打开控制台，执行以下代码复制凭据：
-   ```javascript
-   copy(JSON.stringify({cookie: document.cookie, authorization: localStorage.getItem('token')}))
-   ```
-3. 在本地终端执行：
-   ```bash
-   dubbo-mcp login --env=prod --clipboard
-   ```
-   CLI 会验证凭据有效性并保存至 `~/.dubbo-mcp/session-prod.json`（POSIX 权限 `0600`）。MCP 服务在调用时会自动热读取该文件，会话过期后重新执行上述命令即可，无需重启 AI 助手。
+### 1. 生产环境凭据过期后如何刷新？
+企业 SSO 登录态（Cookie / Token）过期后，接口调用会返回 401/403 鉴权失败提示。此时只需：
+1. 在浏览器重新登录 Dubbo Admin 并执行获取凭据的 `copy(...)` 脚本；
+2. 终端再次执行 `dubbo-mcp login --clipboard`。
+MCP 进程在下一次请求时会自动热加载更新后的 `~/.dubbo-mcp/session-prod.json`，无需重启 Cursor、Codex 或 ZCode。
 
 ### 2. 带版本（version）或分组（group）的接口如何调用？
 通常情况下无需手动配置：

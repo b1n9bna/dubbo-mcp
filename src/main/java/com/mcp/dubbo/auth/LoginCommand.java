@@ -29,7 +29,7 @@ public final class LoginCommand {
             throw new IllegalArgumentException("Choose only one of --clipboard, --stdin, --file");
         System.err.println("🔐 Dubbo Admin credentials (" + env + ")");
         System.err.println("在已登录的 Dubbo Admin 控制台执行：");
-        System.err.println("copy(JSON.stringify({cookie:document.cookie,authorization:localStorage.getItem('token')}))");
+        System.err.println("copy(JSON.stringify({cookie:document.cookie,authorization:localStorage.getItem('token')||localStorage.getItem('Admin-Token')}))");
         String value;
         if (clipboard) {
             if (!System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("mac"))
@@ -52,7 +52,7 @@ public final class LoginCommand {
             value = readTerminal();
         }
         value = AuthSessionManager.normalizeCredential(value);
-        System.err.println("正在验证登录态（最多约 30 秒）...");
+        System.err.println("正在验证登录态...");
         new DubboAdminDriver(env).verifyCredential(value);
         AuthSessionManager.getInstance().saveCredential(env, value);
         System.err.println("✅ 登录验证通过，凭据已保存；运行中的新版 MCP 将在下次请求自动读取。");
