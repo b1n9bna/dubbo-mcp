@@ -6,7 +6,7 @@
 
     <groupId>com.mcp</groupId>
     <artifactId>dubbo-mcp</artifactId>
-    <version>1.0.0-SNAPSHOT</version>
+    <version>1.0.1</version>
     <packaging>jar</packaging>
 
     <name>dubbo-mcp</name>
@@ -134,6 +134,7 @@
                         </goals>
                         <configuration>
                             <createDependencyReducedPom>false</createDependencyReducedPom>
+                            <outputFile>${project.build.directory}/dubbo-mcp.jar</outputFile>
                             <transformers>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
                                     <mainClass>com.mcp.dubbo.McpLauncher</mainClass>

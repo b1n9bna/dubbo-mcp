@@ -26,8 +26,11 @@ public class DubboAdminDriverTest {
             else if (mode.equals("unauthorized")) { status=401; response="{}"; }
             else if (mode.equals("server-error")) { status=500; response="private backend error"; }
             else if (mode.equals("html")) response="<html>login</html>";
-            else if (path.endsWith("/services")) response=mode.equals("shape")?"{\"error\":true}":mode.equals("paged")?"{\"content\":[\"com.example.Service\"]}":"[\"com.example.Service\"]";
-            else if (path.endsWith("/service")) response=mode.equals("ambiguous")?"[{\"service\":\"com.example.Service\",\"version\":\"1\"},{\"service\":\"com.example.Service\",\"version\":\"2\"}]":mode.equals("paged")?"{\"content\":[{\"service\":\"com.example.Service\",\"version\":\"1\",\"group\":\"blue\"}],\"pageable\":{},\"totalElements\":1}":"[{\"service\":\"com.example.Service\",\"version\":\"1\",\"group\":\"blue\"}]";
+            else if (path.endsWith("/services")) response=mode.equals("shape")?"{\"error\":true}":mode.equals("paged")?"{\"content\":[\"com.example.Service\"]}":mode.equals("search-broken")?"[\"blue/com.example.Service:1\"]":"[\"com.example.Service\"]";
+            else if (path.endsWith("/service")) {
+                if (mode.equals("search-broken")) { status = 500; response = "{}"; }
+                else response=mode.equals("ambiguous")?"[{\"service\":\"com.example.Service\",\"version\":\"1\"},{\"service\":\"com.example.Service\",\"version\":\"2\"}]":mode.equals("paged")?"{\"content\":[{\"service\":\"com.example.Service\",\"version\":\"1\",\"group\":\"blue\"}],\"pageable\":{},\"totalElements\":1}":"[{\"service\":\"com.example.Service\",\"version\":\"1\",\"group\":\"blue\"}]";
+            }
             else if (path.contains("/service/")) response="{\"service\":\"blue/com.example.Service:1\",\"metadata\":{\"methods\":[{\"name\":\"query\",\"parameterTypes\":[\"com.example.QueryDTO\"]}]}}";
             else if (path.endsWith("/test")) {
                 calls.incrementAndGet();
@@ -97,5 +100,33 @@ public class DubboAdminDriverTest {
         JSONArray unwrapped = DubboAdminDriver.toServiceArray(dirty);
         Assert.assertNotNull(unwrapped);
         Assert.assertEquals(4, unwrapped.size());
+    }
+    @Test public void supportsVariousPaginationFormats() {
+        // MyBatis-Plus style
+        JSONObject mybatis = JSON.parseObject("{\"records\":[\"com.corp.ServiceA\"],\"total\":1,\"current\":1}");
+        Assert.assertEquals(1, DubboAdminDriver.toServiceArray(mybatis).size());
+
+        // PageHelper style
+        JSONObject pagehelper = JSON.parseObject("{\"list\":[\"com.corp.ServiceB\"],\"pageNum\":1,\"pageSize\":10}");
+        Assert.assertEquals(1, DubboAdminDriver.toServiceArray(pagehelper).size());
+
+        // Single candidate array fallback
+        JSONObject custom = JSON.parseObject("{\"customItems\":[\"com.corp.ServiceC\"],\"status\":\"ok\"}");
+        Assert.assertEquals(1, DubboAdminDriver.toServiceArray(custom).size());
+
+        // Stringified JSON
+        String jsonStr = "{\"content\":[\"com.corp.ServiceD\"]}";
+        Assert.assertEquals(1, DubboAdminDriver.toServiceArray(jsonStr).size());
+    }
+    @Test public void extractsStringifiedMetadata() {
+        JSONObject detail = JSON.parseObject("{\"service\":\"com.corp.Service:1\",\"metadata\":\"{\\\"methods\\\":[{\\\"name\\\":\\\"findUser\\\"}]}\"}");
+        JSONObject meta = DubboAdminDriver.extractMetadata(detail);
+        Assert.assertNotNull(meta);
+        Assert.assertTrue(meta.containsKey("methods"));
+    }
+    @Test public void fallsBackToServicesWhenSearchFails() throws Exception {
+        mode = "search-broken";
+        Map<String, Object> detail = driver.getServiceMetadata("com.example.Service");
+        Assert.assertEquals("blue/com.example.Service:1", detail.get("service"));
     }
 }

@@ -118,7 +118,14 @@ public class DubboAdminDriver implements RpcDriver {
 
     @Override public List<String> listServices(String keyword) {
         try {
-            List<String> services = extractServiceNames(request("/services", null, credential()));
+            Object resp;
+            try {
+                resp = request("/services", null, credential());
+            } catch (Exception e) {
+                // Fallback for Dubbo Admin deployments that do not expose /services, querying /service instead
+                resp = request("/service?pattern=service&filter=*", null, credential());
+            }
+            List<String> services = extractServiceNames(resp);
             String kw = keyword == null ? "" : keyword.toLowerCase(Locale.ROOT);
             services.removeIf(s -> !s.toLowerCase(Locale.ROOT).contains(kw));
             Collections.sort(services); return services;
@@ -126,28 +133,53 @@ public class DubboAdminDriver implements RpcDriver {
     }
     static JSONArray toServiceArray(Object response) {
         if (response instanceof JSONArray) return (JSONArray) response;
+        if (response instanceof String) {
+            String s = ((String) response).trim();
+            if (s.startsWith("[") || s.startsWith("{")) {
+                try {
+                    return toServiceArray(JSON.parse(s));
+                } catch (Exception ignored) {
+                }
+            }
+        }
         if (response instanceof JSONObject) {
             JSONObject obj = (JSONObject) response;
-            if (obj.get("content") instanceof JSONArray) return obj.getJSONArray("content");
-            if (obj.get("data") instanceof JSONArray) return obj.getJSONArray("data");
-            if (obj.get("services") instanceof JSONArray) return obj.getJSONArray("services");
-            if (obj.get("result") instanceof JSONArray) return obj.getJSONArray("result");
-            // If response is wrapped in standard API envelope: {"code":200, "data": {"content":[...]}}
-            if (obj.get("data") instanceof JSONObject) {
-                JSONArray nested = toServiceArray(obj.getJSONObject("data"));
-                if (nested != null) return nested;
+            // 1. Direct pagination/list property matching across Spring Data, MyBatis-Plus, PageHelper
+            String[] arrayKeys = {
+                "content", "data", "records", "list", "rows", "items",
+                "services", "result", "elements", "serviceList", "serviceDTOList"
+            };
+            for (String key : arrayKeys) {
+                if (obj.get(key) instanceof JSONArray) return obj.getJSONArray(key);
             }
-            if (obj.get("result") instanceof JSONObject) {
-                JSONArray nested = toServiceArray(obj.getJSONObject("result"));
-                if (nested != null) return nested;
+            // 2. Standard API envelopes: {"code":200, "data": {...}}, {"result": {...}}, {"page": {...}}
+            String[] nestedKeys = {"data", "result", "response", "page", "body", "payload"};
+            for (String key : nestedKeys) {
+                if (obj.get(key) instanceof JSONObject) {
+                    JSONArray nested = toServiceArray(obj.getJSONObject(key));
+                    if (nested != null) return nested;
+                }
             }
+            // 3. Fallback: If there is exactly one JSONArray entry at top level, treat it as the service list
+            JSONArray singleCandidate = null;
+            for (Map.Entry<String, Object> entry : obj.entrySet()) {
+                if (entry.getValue() instanceof JSONArray) {
+                    if (singleCandidate == null) {
+                        singleCandidate = (JSONArray) entry.getValue();
+                    } else {
+                        singleCandidate = null;
+                        break;
+                    }
+                }
+            }
+            if (singleCandidate != null) return singleCandidate;
         }
         return null;
     }
 
     private static List<String> extractServiceNames(Object parsed) {
         JSONArray array = toServiceArray(parsed);
-        if (array == null) throw new IllegalStateException("Unexpected Dubbo Admin services response (expected array)");
+        if (array == null) throw new IllegalStateException("Unexpected Dubbo Admin services response (expected array or paged envelope)");
         Set<String> names = new LinkedHashSet<>();
         for (Object item : array) {
             String name = null;
@@ -156,7 +188,11 @@ public class DubboAdminDriver implements RpcDriver {
             } else if (item instanceof JSONObject) {
                 JSONObject obj = (JSONObject) item;
                 name = obj.getString("service");
-                if (name == null) name = obj.getString("serviceName");
+                if (name == null || (!name.contains(".") && obj.getString("serviceName") != null && obj.getString("serviceName").contains("."))) {
+                    name = obj.getString("serviceName");
+                }
+                if (name == null) name = obj.getString("serviceKey");
+                if (name == null) name = obj.getString("interfaceName");
                 if (name == null) name = obj.getString("name");
                 if (name == null) name = obj.getString("interface");
             }
@@ -176,19 +212,60 @@ public class DubboAdminDriver implements RpcDriver {
         ConfigManager cfg = ConfigManager.getInstance();
         if (version == null) version = cfg.getProperty("env." + env + ".version");
         if (group == null) group = cfg.getProperty("env." + env + ".group");
-        HttpUrl query = new HttpUrl.Builder().scheme("http").host("localhost").addPathSegment("service")
-                .addQueryParameter("pattern", "service").addQueryParameter("filter", "*" + iface + "*").build();
-        Object response = request(query.encodedPath() + "?" + query.encodedQuery(), null, cred);
-        JSONArray rows = toServiceArray(response);
-        if (rows == null) throw new IllegalStateException("Unexpected Dubbo Admin service search response");
+
         Set<String> keys = new TreeSet<>();
+        // 1. Search via /service?pattern=service&filter=*iface*
+        try {
+            HttpUrl query = new HttpUrl.Builder().scheme("http").host("localhost").addPathSegment("service")
+                    .addQueryParameter("pattern", "service").addQueryParameter("filter", "*" + iface + "*").build();
+            Object response = request(query.encodedPath() + "?" + query.encodedQuery(), null, cred);
+            JSONArray rows = toServiceArray(response);
+            if (rows != null) {
+                collectMatchingKeys(rows, iface, version, group, keys);
+            }
+        } catch (Exception ignored) {
+            // Service search endpoint may not be supported or returned an error; continue to fallback
+        }
+
+        // 2. Fallback: If no service found via /service query, inspect /services list
+        if (keys.isEmpty()) {
+            try {
+                Object allServicesResp = request("/services", null, cred);
+                JSONArray allServices = toServiceArray(allServicesResp);
+                if (allServices != null) {
+                    collectMatchingKeys(allServices, iface, version, group, keys);
+                }
+            } catch (Exception ignored) {
+            }
+        }
+
+        // 3. Fallback: If still not found, but caller provided an explicit version or group, synthesize the key directly
+        if (keys.isEmpty()) {
+            if (version != null || group != null) {
+                return (empty(group).isEmpty() ? "" : group + "/") + iface + (empty(version).isEmpty() ? "" : ":" + version);
+            }
+            throw new IllegalStateException("No matching Dubbo Admin service: " + iface);
+        }
+        if (keys.size() != 1) {
+            throw new IllegalArgumentException("Multiple service versions/groups found for " + iface + ": " + keys + "; please specify version and group");
+        }
+        return keys.iterator().next();
+    }
+
+    private static void collectMatchingKeys(JSONArray rows, String iface, String version, String group, Set<String> keys) {
         for (Object item : rows) {
             String name = null;
             String rowGroup = null, rowVersion = null;
             if (item instanceof JSONObject) {
                 JSONObject row = (JSONObject) item;
                 name = row.getString("service");
-                if (name == null) name = row.getString("serviceName");
+                if (name == null || (!name.contains(".") && row.getString("serviceName") != null && row.getString("serviceName").contains("."))) {
+                    name = row.getString("serviceName");
+                }
+                if (name == null) name = row.getString("serviceKey");
+                if (name == null) name = row.getString("interfaceName");
+                if (name == null) name = row.getString("name");
+                if (name == null) name = row.getString("interface");
                 rowGroup = row.getString("group");
                 rowVersion = row.getString("version");
             } else if (item instanceof String) {
@@ -202,9 +279,6 @@ public class DubboAdminDriver implements RpcDriver {
             if (!iface.equals(name) || (version != null && !version.equals(empty(rowVersion))) || (group != null && !group.equals(empty(rowGroup)))) continue;
             keys.add((empty(rowGroup).isEmpty() ? "" : rowGroup + "/") + name + (empty(rowVersion).isEmpty() ? "" : ":" + rowVersion));
         }
-        if (keys.isEmpty()) throw new IllegalStateException("No matching Dubbo Admin service: " + iface);
-        if (keys.size() != 1) throw new IllegalArgumentException("Multiple service versions/groups: " + keys + "; specify version and group");
-        return keys.iterator().next();
     }
     private static String empty(String s) { return s == null ? "" : s.trim(); }
     private static String detailPath(String key) {
@@ -213,13 +287,25 @@ public class DubboAdminDriver implements RpcDriver {
     }
     static JSONObject extractMetadata(JSONObject detail) {
         if (detail == null) return null;
-        if (detail.containsKey("metadata") && detail.get("metadata") instanceof JSONObject) {
+        if (detail.get("metadata") instanceof JSONObject) {
             return detail.getJSONObject("metadata");
         }
-        if (detail.containsKey("data") && detail.get("data") instanceof JSONObject) {
+        if (detail.get("metadata") instanceof String) {
+            try {
+                return JSON.parseObject(detail.getString("metadata"));
+            } catch (Exception ignored) {
+            }
+        }
+        if (detail.get("data") instanceof JSONObject) {
             JSONObject dataObj = detail.getJSONObject("data");
-            if (dataObj.containsKey("metadata") && dataObj.get("metadata") instanceof JSONObject) {
+            if (dataObj.get("metadata") instanceof JSONObject) {
                 return dataObj.getJSONObject("metadata");
+            }
+            if (dataObj.get("metadata") instanceof String) {
+                try {
+                    return JSON.parseObject(dataObj.getString("metadata"));
+                } catch (Exception ignored) {
+                }
             }
             if (dataObj.containsKey("methods")) {
                 return dataObj;

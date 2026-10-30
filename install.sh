@@ -37,7 +37,11 @@ CLI_WRAPPER="$BIN_DIR/dubbo-mcp"
 RELEASE_URL="https://github.com/b1n9bna/dubbo-mcp/releases/latest/download/dubbo-mcp.jar"
 STAGED_JAR=$(mktemp "$INSTALL_DIR/dubbo-mcp.XXXXXX")
 trap 'rm -f "$STAGED_JAR"' EXIT HUP INT TERM
-if [ -f "./target/dubbo-mcp-1.0.0-SNAPSHOT.jar" ]; then
+if [ -f "./target/dubbo-mcp.jar" ]; then
+    cp "./target/dubbo-mcp.jar" "$STAGED_JAR"
+elif [ -f "./target/dubbo-mcp-1.0.1.jar" ]; then
+    cp "./target/dubbo-mcp-1.0.1.jar" "$STAGED_JAR"
+elif [ -f "./target/dubbo-mcp-1.0.0-SNAPSHOT.jar" ]; then
     cp "./target/dubbo-mcp-1.0.0-SNAPSHOT.jar" "$STAGED_JAR"
 else
     curl -fSL --connect-timeout 10 --max-time 120 -o "$STAGED_JAR" "$RELEASE_URL"

@@ -7,7 +7,7 @@ RUN mvn clean package -DskipTests
 
 FROM eclipse-temurin:17-jre-alpine
 WORKDIR /app
-COPY --from=build /app/target/dubbo-mcp-1.0.0-SNAPSHOT.jar /app/dubbo-mcp.jar
+COPY --from=build /app/target/dubbo-mcp.jar /app/dubbo-mcp.jar
 
 # Run via STDIO JSON-RPC
 ENTRYPOINT ["java", "-jar", "/app/dubbo-mcp.jar"]
