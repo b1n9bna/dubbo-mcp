@@ -14,31 +14,7 @@
 
 ---
 
-## 功能概述
-
-- **双通道调用**：
-  - **开发/测试环境**：直连 ZooKeeper，通过 Dubbo 原生泛化调用（`GenericService`）发起 RPC 请求；
-  - **生产环境**：桥接现有的 `dubbo-admin` 控制台 HTTP API，避免外部工具直连生产集群端口。
-- **免引入接口依赖**：自动从注册中心识别服务版本（`version`）与分组（`group`），并从 ZooKeeper 元数据反查方法入参类型及 DTO 字段结构。
-- **环境管理与安全控制**：
-  - 支持多环境配置（`test` / `uat` / `prod`），可在对话中动态切换；
-  - 生产环境支持只读方法正则拦截（默认仅允许查询操作）与敏感信息（手机号、身份证）脱敏。
-- **标准流严格隔离**：基于标准 Java 8 实现，日志严格重定向至 `stderr`，确保 `stdout` 纯净用于 MCP 的 JSON-RPC 通信。
-
----
-
-## 性能与资源指标
-
-| 指标 | 实测数值 | 说明 |
-| :--- | :--- | :--- |
-| **冷启动耗时** | **< 100 ms** | 进程随起随用，快速建立连接 |
-| **运行常驻内存 (RSS)** | **~25 MB** | 内存开销小，长时间运行无负担 |
-| **标准流隔离** | **严格分离** | 日志重定向至 `stderr`，防止污染 JSON-RPC 标准通信流 |
-| **依赖环境** | **仅需 JRE 8+** | 单个 Fat-JAR 运行，内置 Dubbo 泛化调用与 Curator |
-
----
-
-## 快速安装
+## 🚀 快速安装
 
 ### 1. 一键脚本安装
 
@@ -52,16 +28,16 @@ curl -fsSL https://raw.githubusercontent.com/b1n9bna/dubbo-mcp/main/install.sh |
 irm https://raw.githubusercontent.com/b1n9bna/dubbo-mcp/main/install.ps1 | iex
 ```
 
-脚本会下载可执行文件至 `~/.dubbo-mcp/dubbo-mcp.jar`，并创建全局命令 `dubbo-mcp`。安装后可随时执行以下命令自动为本机已安装的 AI 工具写入配置：
+脚本会下载可执行文件至 `~/.dubbo-mcp/dubbo-mcp.jar`，并创建全局命令 `dubbo-mcp`。安装后执行以下命令可自动为本机已安装的 AI 工具写入配置：
 ```bash
 dubbo-mcp install
 ```
 
-*(也支持本地源码编译：`mvn clean package -DskipTests`)*
+*(也可本地源码编译：`mvn clean package -DskipTests`)*
 
 ---
 
-## 配置说明
+## ⚙️ 环境配置
 
 配置文件路径：`~/.dubbo-mcp/config.properties`
 
@@ -94,15 +70,22 @@ security.readonly.regex=^(get|query|find|select|list|count|check|is|search|fetch
 
 ---
 
-## 生产环境鉴权登录（对接 dubbo-admin 时必配）
+## 🔐 生产环境鉴权登录（对接 dubbo-admin 时必配）
 
-企业内部的 Dubbo Admin 通常接入了统一单点登录（SSO/OAuth）。如果配置了生产环境（`env.prod.type=dubbo-admin`），首次使用前或会话过期后，需在终端执行一次登录命令保存凭据：
+> [!IMPORTANT]
+> **首次接入生产环境必读**  
+> 企业内部的 Dubbo Admin 通常接入了单点登录（SSO/OAuth）。若配置了生产环境（`env.prod.type=dubbo-admin`），首次使用前或会话过期后，需在终端执行一次登录命令保存本地凭据，否则调用接口会返回 401/403 鉴权失败。
 
-1. **获取登录态**：在浏览器中打开已登录的 Dubbo Admin 控制台，按 <kbd>F12</kbd>（Mac 快捷键 <kbd>Cmd</kbd>+<kbd>Option</kbd>+<kbd>I</kbd>）打开控制台 Console，执行：
+### 操作步骤（仅需两步）：
+
+1. **获取登录态**：在浏览器中打开并登录 Dubbo Admin 控制台，按 <kbd>F12</kbd>（Mac 快捷键 <kbd>Cmd</kbd>+<kbd>Option</kbd>+<kbd>I</kbd>）打开控制台 Console，执行：
    ```javascript
-   copy(JSON.stringify({cookie: document.cookie, authorization: localStorage.getItem('token') || localStorage.getItem('Admin-Token')}))
+   copy(JSON.stringify({
+     cookie: document.cookie,
+     authorization: localStorage.getItem('token') || localStorage.getItem('Admin-Token')
+   }))
    ```
-2. **终端保存凭据**：在终端直接执行（macOS 下 `--clipboard` 会自动从系统剪贴板读取，彻底避免长文本终端截断）：
+2. **终端保存凭据**：在终端直接执行（macOS 下 `--clipboard` 会自动从系统剪贴板读取，彻底避免终端长文本截断）：
    ```bash
    dubbo-mcp login --clipboard
    ```
@@ -110,7 +93,7 @@ security.readonly.regex=^(get|query|find|select|list|count|check|is|search|fetch
 
 ---
 
-## 客户端接入示例
+## 🔌 客户端接入示例
 
 ### Codex
 在 `~/.codex/config.toml` 中添加：
@@ -142,7 +125,7 @@ args = []
 
 ---
 
-## MCP 工具列表
+## 🛠️ MCP 工具列表
 
 | 工具名 | 说明 |
 | :--- | :--- |
@@ -154,7 +137,31 @@ args = []
 
 ---
 
-## 常见问题与说明
+## ✨ 核心特性
+
+- **双通道调用**：
+  - **开发/测试环境**：直连 ZooKeeper，通过 Dubbo 原生泛化调用（`GenericService`）发起 RPC 请求；
+  - **生产环境**：桥接现有的 `dubbo-admin` 控制台 HTTP API，避免外部工具直连生产集群端口。
+- **免引入接口依赖**：自动从注册中心识别服务版本（`version`）与分组（`group`），并从 ZooKeeper 元数据反查方法入参类型及 DTO 字段结构。
+- **环境管理与安全控制**：
+  - 支持多环境配置（`test` / `uat` / `prod`），可在对话中动态切换；
+  - 生产环境支持只读方法正则拦截（默认仅允许查询操作）与敏感信息（手机号、身份证）脱敏。
+- **标准流严格隔离**：基于标准 Java 8 实现，日志严格重定向至 `stderr`，确保 `stdout` 纯净用于 MCP 的 JSON-RPC 通信。
+
+---
+
+## 📊 性能与资源指标
+
+| 指标 | 实测数值 | 说明 |
+| :--- | :--- | :--- |
+| **冷启动耗时** | **< 100 ms** | 进程随起随用，快速建立连接 |
+| **运行常驻内存 (RSS)** | **~25 MB** | 内存开销小，长时间运行无负担 |
+| **标准流隔离** | **严格分离** | 日志重定向至 `stderr`，防止污染 JSON-RPC 标准通信流 |
+| **依赖环境** | **仅需 JRE 8+** | 单个 Fat-JAR 运行，内置 Dubbo 泛化调用与 Curator |
+
+---
+
+## ❓ 常见问题与说明
 
 ### 1. 生产环境凭据过期后如何刷新？
 企业 SSO 登录态（Cookie / Token）过期后，接口调用会返回 401/403 鉴权失败提示。此时只需：
@@ -174,7 +181,7 @@ Dubbo 泛化调用支持将 JSON Map 映射为 Java 对象：
 
 ---
 
-## 本地开发与构建
+## 💻 本地开发与构建
 
 ```bash
 # 运行单元测试
