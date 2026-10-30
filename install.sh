@@ -33,21 +33,20 @@ mkdir -p "$BIN_DIR"
 JAR_PATH="$INSTALL_DIR/dubbo-mcp.jar"
 CLI_WRAPPER="$BIN_DIR/dubbo-mcp"
 
-# 3. Download or install the Fat-JAR
-echo "📦 Downloading latest dubbo-mcp release..."
+# 3. Stage and validate before replacing the installed JAR.
 RELEASE_URL="https://github.com/b1n9bna/dubbo-mcp/releases/latest/download/dubbo-mcp.jar"
-
-# If running inside the repo folder, copy local target jar directly for instant testing
+STAGED_JAR=$(mktemp "$INSTALL_DIR/dubbo-mcp.XXXXXX")
+trap 'rm -f "$STAGED_JAR"' EXIT HUP INT TERM
 if [ -f "./target/dubbo-mcp-1.0.0-SNAPSHOT.jar" ]; then
-    echo "ℹ️ Using local build artifact: target/dubbo-mcp-1.0.0-SNAPSHOT.jar"
-    cp "./target/dubbo-mcp-1.0.0-SNAPSHOT.jar" "$JAR_PATH"
-elif curl -fsSL -I "$RELEASE_URL" >/dev/null 2>&1; then
-    curl -fsSL -o "$JAR_PATH" "$RELEASE_URL"
+    cp "./target/dubbo-mcp-1.0.0-SNAPSHOT.jar" "$STAGED_JAR"
 else
-    # Fallback to cloning/building or direct raw download
-    echo "ℹ️ Downloading default bundle..."
-    curl -fsSL -o "$JAR_PATH" "https://raw.githubusercontent.com/b1n9bna/dubbo-mcp/main/target/dubbo-mcp-1.0.0-SNAPSHOT.jar" 2>/dev/null || true
+    curl -fSL --connect-timeout 10 --max-time 120 -o "$STAGED_JAR" "$RELEASE_URL"
 fi
+java -jar "$STAGED_JAR" --help >/dev/null 2>&1 || {
+    echo "Invalid or incompatible JAR; existing installation was preserved." >&2
+    exit 1
+}
+mv "$STAGED_JAR" "$JAR_PATH"
 
 # 4. Generate the CLI wrapper script
 cat << 'EOF' > "$CLI_WRAPPER"
@@ -79,7 +78,7 @@ fi
 
 # 6. Auto-wire detected AI Coding Agents
 echo ""
-"$CLI_WRAPPER" install || true
+"$CLI_WRAPPER" install
 
 echo "\n${BOLD}${GREEN}🎉 Dubbo-MCP installed successfully!${RESET}"
 echo "Run ${BOLD}dubbo-mcp --help${RESET} to inspect commands."

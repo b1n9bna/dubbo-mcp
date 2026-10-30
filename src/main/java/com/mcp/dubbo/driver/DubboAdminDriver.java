@@ -4,315 +4,187 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.mcp.dubbo.auth.AuthSessionManager;
-import com.mcp.dubbo.auth.LoopbackBrowserAuth;
 import com.mcp.dubbo.config.ConfigManager;
 import com.mcp.dubbo.driver.spi.RpcDriver;
 import okhttp3.*;
-
 import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 
-/**
- * Dubbo-Admin HTTP Bridge Driver:
- * Connects to enterprise dubbo-admin REST APIs using OkHttp.
- * Bypasses network isolation, ZK ports, and raw Dubbo TCP firewalls.
- */
+/** Dubbo Admin API bridge. HTTP/auth/schema errors must never look like empty query results. */
 public class DubboAdminDriver implements RpcDriver {
-
-    private final String env;
-    private final String adminUrl;
+    private final String env, adminUrl;
     private final OkHttpClient httpClient;
-    private final LoopbackBrowserAuth browserAuth = new LoopbackBrowserAuth();
-    private final AuthSessionManager sessionManager = AuthSessionManager.getInstance();
+    private final AuthSessionManager sessions = AuthSessionManager.getInstance();
+    private volatile String detectedPrefix;
 
     public DubboAdminDriver(String env) {
         this.env = env;
         ConfigManager config = ConfigManager.getInstance();
-        String url = config.getProperty("env." + env + ".admin_url", "http://127.0.0.1:8080");
-        if (url.endsWith("/")) {
-            url = url.substring(0, url.length() - 1);
-        }
-        this.adminUrl = url;
+        String url = config.getProperty("env." + env + ".admin_url");
+        if (url == null || HttpUrl.parse(url) == null) throw new IllegalArgumentException("Invalid admin_url for " + env);
+        this.adminUrl = url.replaceAll("/+$", "");
+        String prefix = config.getProperty("env." + env + ".admin_api_prefix");
+        if (prefix != null) detectedPrefix = prefix.replaceAll("/+$", "");
+        if (adminUrl.endsWith("/dubbo-admin")) detectedPrefix = "";
+        httpClient = new OkHttpClient.Builder().connectTimeout(10, TimeUnit.SECONDS)
+                .readTimeout(20, TimeUnit.SECONDS).callTimeout(30, TimeUnit.SECONDS)
+                .followRedirects(false).followSslRedirects(false)
+                .retryOnConnectionFailure(false).build();
+    }
+    @Override public String getType() { return "dubbo-admin"; }
 
-        this.httpClient = new OkHttpClient.Builder()
-                .connectTimeout(10, TimeUnit.SECONDS)
-                .readTimeout(30, TimeUnit.SECONDS)
-                .followRedirects(false) // Do not auto-follow 302 to SSO login pages
-                .build();
-
-        // Start background keep-alive heartbeat every 5 minutes
-        sessionManager.startKeepAlive(env, this::pingAdmin);
+    public void verifyCredential(String credential) throws Exception {
+        Object result = request("/services", null, credential);
+        extractServiceNames(result); // A successful HTML login page is not a successful login.
     }
 
-    @Override
-    public String getType() {
-        return "dubbo-admin";
-    }
-
-    private volatile String detectedPrefix = null;
-
-    private String getApiUrl(String subPath) {
-        if (adminUrl.endsWith("/dubbo-admin")) {
-            return adminUrl + subPath;
-        }
-        if (detectedPrefix == null) {
-            detectPrefix();
-        }
-        return adminUrl + detectedPrefix + subPath;
-    }
-
-    private synchronized void detectPrefix() {
-        if (detectedPrefix != null) return;
-        try {
-            Request req = new Request.Builder().url(adminUrl + "/dubbo-admin/api/dev/services").head().build();
-            try (Response resp = httpClient.newCall(req).execute()) {
-                if (resp.code() != 404) {
-                    detectedPrefix = "/dubbo-admin";
-                    return;
-                }
-            }
-        } catch (Exception ignored) {
-        }
-        detectedPrefix = "";
-    }
-
-    @Override
-    public Object invoke(String interfaceName, String method, String[] paramTypes, Object[] args) throws Exception {
-        return invoke(interfaceName, method, paramTypes, args, null, null);
-    }
-
-    @Override
-    public Object invoke(String interfaceName, String method, String[] paramTypes, Object[] args, String version, String group) throws Exception {
-        return executeWithAuthRetry(() -> {
-            String credential = ensureCredential();
-
-            JSONObject payload = new JSONObject();
-            payload.put("service", interfaceName);
-            payload.put("method", method);
-            payload.put("parameterTypes", paramTypes != null ? Arrays.asList(paramTypes) : Collections.emptyList());
-            payload.put("params", args != null ? Arrays.asList(args) : Collections.emptyList());
-
-            if (version != null && !version.trim().isEmpty()) {
-                payload.put("version", version.trim());
-            }
-            if (group != null && !group.trim().isEmpty()) {
-                payload.put("group", group.trim());
-            }
-
-            RequestBody body = RequestBody.create(
-                    MediaType.parse("application/json; charset=utf-8"),
-                    payload.toJSONString()
-            );
-
-            // Standard Dubbo-Admin test invocation endpoint (with auto-detected context path)
-            String apiUrl = getApiUrl("/api/dev/test");
-
-            Request.Builder reqBuilder = new Request.Builder()
-                    .url(apiUrl)
-                    .post(body);
-            attachCredential(reqBuilder, credential);
-
-            try (Response response = httpClient.newCall(reqBuilder.build()).execute()) {
-                if (response.code() == 401 || response.code() == 302 || response.code() == 403) {
-                    throw new SessionExpiredException("dubbo-admin session expired or forbidden (HTTP " + response.code() + ")");
-                }
-                if (!response.isSuccessful()) {
-                    String errBody = response.body() != null ? response.body().string() : "";
-                    throw new IOException("dubbo-admin API returned HTTP " + response.code() + ": " + errBody);
-                }
-                String respJson = response.body() != null ? response.body().string() : "{}";
-                return JSON.parse(respJson);
-            }
-        });
-    }
-
-    @Override
-    public List<String> listServices(String keyword) {
-        List<String> result = new ArrayList<>();
-        try {
-            executeWithAuthRetry(() -> {
-                String credential = ensureCredential();
-                String apiUrl = getApiUrl("/api/dev/services");
-
-                Request.Builder reqBuilder = new Request.Builder().url(apiUrl).get();
-                attachCredential(reqBuilder, credential);
-
-                try (Response response = httpClient.newCall(reqBuilder.build()).execute()) {
-                    if (response.code() == 401 || response.code() == 302 || response.code() == 403) {
-                        throw new SessionExpiredException("dubbo-admin session expired or forbidden");
-                    }
-                    if (response.isSuccessful() && response.body() != null) {
-                        String bodyStr = response.body().string();
-                        Object parsed = JSON.parse(bodyStr);
-                        List<String> services = extractServiceNames(parsed);
-                        String lowerKw = keyword != null ? keyword.toLowerCase() : "";
-                        for (String s : services) {
-                            if (lowerKw.isEmpty() || s.toLowerCase().contains(lowerKw)) {
-                                result.add(s);
-                            }
-                        }
-                    }
-                }
-                return null;
-            });
-        } catch (Exception e) {
-            System.err.println("[DubboAdminDriver] Error querying services from dubbo-admin: " + e.getMessage());
-        }
-        Collections.sort(result);
-        return result;
-    }
-
-    @Override
-    public Map<String, Object> getServiceMetadata(String interfaceName) {
-        Map<String, Object> meta = new LinkedHashMap<>();
-        meta.put("interface", interfaceName);
-
-        try {
-            executeWithAuthRetry(() -> {
-                String credential = ensureCredential();
-                String apiUrl = getApiUrl("/api/dev/service/" + interfaceName + "/testMethod");
-
-                Request.Builder reqBuilder = new Request.Builder().url(apiUrl).get();
-                attachCredential(reqBuilder, credential);
-
-                try (Response response = httpClient.newCall(reqBuilder.build()).execute()) {
-                    if (response.code() == 401 || response.code() == 302 || response.code() == 403) {
-                        throw new SessionExpiredException("dubbo-admin session expired or forbidden");
-                    }
-                    if (response.isSuccessful() && response.body() != null) {
-                        meta.put("details", JSON.parse(response.body().string()));
-                    }
-                }
-                return null;
-            });
-        } catch (Exception e) {
-            System.err.println("[DubboAdminDriver] Error fetching metadata from dubbo-admin: " + e.getMessage());
-        }
-        return meta;
-    }
-
-    private void attachCredential(Request.Builder builder, String credential) {
-        if (credential == null || credential.trim().isEmpty()) {
-            return;
-        }
-        if (credential.startsWith("Bearer ") || credential.startsWith("Token ")) {
-            builder.header("Authorization", credential);
-        } else {
-            builder.header("Cookie", credential);
-        }
-    }
-
-    private String ensureCredential() throws Exception {
-        String existing = sessionManager.getCredential(env);
-        if (existing != null && !existing.trim().isEmpty()) {
-            return existing;
-        }
-
-        // Try username/password auto-login if configured
+    private String credential() throws Exception {
+        String saved = sessions.getCredential(env);
+        if (saved != null) return saved;
         ConfigManager cfg = ConfigManager.getInstance();
-        String username = cfg.getProperty("env." + env + ".admin_username");
+        String user = cfg.getProperty("env." + env + ".admin_username");
         String password = cfg.getProperty("env." + env + ".admin_password");
-        if (username != null && !username.trim().isEmpty() && password != null && !password.trim().isEmpty()) {
-            String loggedInCred = tryPasswordLogin(username.trim(), password.trim());
-            if (loggedInCred != null && !loggedInCred.trim().isEmpty()) {
-                sessionManager.saveCredential(env, loggedInCred);
-                return loggedInCred;
-            }
-        }
-
-        // DO NOT block the tool execution with interactive browser pops (prevents AI agent client timeouts).
-        // Return clear, actionable error instruction immediately.
-        throw new IllegalStateException("生产环境 (" + env + ") 尚未配置登录凭据 (Cookie/Token)。\n" +
-                "【快速解决方式】：\n" +
-                "1. 请在已登录的浏览器 Dubbo-Admin 页面 (F12 控制台) 执行: copy(document.cookie)\n" +
-                "2. 粘贴到 ~/.dubbo-mcp/config.properties 中的 env." + env + ".admin_cookie 字段；\n" +
-                "   或者在终端执行: dubbo-mcp login 粘贴保存。");
-    }
-
-    private String tryPasswordLogin(String username, String password) {
-        try {
-            JSONObject loginJson = new JSONObject();
-            loginJson.put("userName", username);
-            loginJson.put("password", password);
-            RequestBody body = RequestBody.create(
-                    MediaType.parse("application/json; charset=utf-8"),
-                    loginJson.toJSONString()
-            );
-            Request req = new Request.Builder()
-                    .url(adminUrl + "/api/dev/login")
-                    .post(body)
-                    .build();
+        if (user != null && !user.isEmpty() && password != null && !password.isEmpty()) {
+            // The deployed Admin uses GET /user/login and returns a raw token.
+            String query = new HttpUrl.Builder().scheme("http").host("localhost").addPathSegment("user")
+                    .addPathSegment("login").addQueryParameter("userName", user).addQueryParameter("password", password)
+                    .build().encodedPath() + "?" + new HttpUrl.Builder().scheme("http").host("localhost")
+                    .addQueryParameter("userName", user).addQueryParameter("password", password).build().encodedQuery();
+            String prefix = detectedPrefix;
+            if (prefix == null) { detectPrefixFromPage(); prefix = detectedPrefix; }
+            Request req = new Request.Builder().url(adminUrl + prefix + "/api/dev" + query).get().build();
             try (Response resp = httpClient.newCall(req).execute()) {
-                if (resp.isSuccessful()) {
-                    String setCookie = resp.header("Set-Cookie");
-                    String respStr = resp.body() != null ? resp.body().string() : "";
-                    JSONObject resObj = JSON.parseObject(respStr);
-                    String token = resObj != null ? resObj.getString("token") : null;
-                    if (token != null && !token.isEmpty()) {
-                        return "Bearer " + token;
-                    }
-                    if (setCookie != null && !setCookie.isEmpty()) {
-                        return setCookie;
-                    }
-                }
+                if (!resp.isSuccessful() || resp.body() == null) throw new IOException("Dubbo Admin password login failed (HTTP " + resp.code() + ")");
+                String token = resp.body().string().trim();
+                if (token.startsWith("\"")) token = JSON.parseObject(token, String.class);
+                if (token.isEmpty() || token.startsWith("<") || token.startsWith("{")) throw new IOException("Unexpected password login response");
+                JSONObject cred = new JSONObject(); cred.put("authorization", token);
+                verifyCredential(cred.toJSONString());
+                sessions.saveCredential(env, cred.toJSONString()); return cred.toJSONString();
             }
-        } catch (Exception e) {
-            System.err.println("[DubboAdminDriver] Auto-login with username/password failed: " + e.getMessage());
         }
-        return null;
+        throw new IllegalStateException("No credentials for " + env + ". Run dubbo-mcp login --env=" + env
+                + " --clipboard (macOS), copying cookie AND localStorage token as shown by login.");
     }
 
-    private void pingAdmin() {
+    private synchronized void detectPrefixFromPage() throws IOException {
+        if (detectedPrefix != null) return;
+        try (Response response = httpClient.newCall(new Request.Builder().url(adminUrl + "/").get().build()).execute()) {
+            String html = response.body() == null ? "" : response.body().string();
+            if (!response.isSuccessful()) throw new IOException("Cannot detect Admin context; set admin_api_prefix explicitly");
+            detectedPrefix = html.contains("/dubbo-admin/") ? "/dubbo-admin" : "";
+        }
+    }
+
+    private Object request(String path, JSONObject payload, String credential) throws Exception {
+        if (detectedPrefix == null) detectPrefixFromPage();
+        Request.Builder builder = new Request.Builder().url(adminUrl + detectedPrefix + "/api/dev" + path);
+        if (payload == null) builder.get();
+        else builder.post(RequestBody.create(MediaType.parse("application/json; charset=utf-8"), payload.toJSONString()));
+        attachCredential(builder, credential);
+        try (Response response = httpClient.newCall(builder.build()).execute()) {
+            int code = response.code();
+            if (code == 401 || code == 403 || (code >= 300 && code < 400))
+                throw new IllegalStateException("Dubbo Admin authentication failed (HTTP " + code + ") for " + env
+                        + "; log in again with cookie AND localStorage token. Run dubbo-mcp login --env=" + env + " --clipboard");
+            if (!response.isSuccessful()) throw new IOException("Dubbo Admin API returned HTTP " + code + " for " + path.split("\\?")[0]);
+            String body = response.body() == null ? "" : response.body().string().trim();
+            if (body.startsWith("<") || body.isEmpty()) throw new IOException("Dubbo Admin returned HTML/empty response; check authentication and admin_api_prefix");
+            try { return JSON.parse(body); }
+            catch (Exception e) { throw new IOException("Dubbo Admin returned invalid JSON"); }
+        } catch (java.io.InterruptedIOException e) {
+            throw new IOException("Dubbo Admin request timed out; check network and configured endpoint");
+        }
+    }
+
+    static void attachCredential(Request.Builder builder, String value) {
+        value = AuthSessionManager.normalizeCredential(value);
+        if (value.startsWith("{")) {
+            JSONObject obj = JSON.parseObject(value);
+            if (obj.getString("cookie") != null && !obj.getString("cookie").isEmpty()) builder.header("Cookie", obj.getString("cookie"));
+            if (obj.getString("authorization") != null && !obj.getString("authorization").isEmpty()) builder.header("Authorization", obj.getString("authorization"));
+        } else if (value.startsWith("Authorization:")) builder.header("Authorization", value.substring(14).trim());
+        else if (value.startsWith("Bearer ") || value.startsWith("Token ") || !value.contains("=")) builder.header("Authorization", value);
+        else builder.header("Cookie", value);
+    }
+
+    @Override public List<String> listServices(String keyword) {
         try {
-            String cred = sessionManager.getCredential(env);
-            if (cred == null) return;
-            Request.Builder b = new Request.Builder().url(adminUrl + "/api/dev/version").get();
-            attachCredential(b, cred);
-            try (Response resp = httpClient.newCall(b.build()).execute()) {
-                if (resp.code() == 401 || resp.code() == 302) {
-                    System.err.println("[DubboAdminDriver] Keep-alive detected expired session for " + env);
-                    sessionManager.clearCredential(env);
-                }
-            }
-        } catch (Exception ignored) {
+            List<String> services = extractServiceNames(request("/services", null, credential()));
+            String kw = keyword == null ? "" : keyword.toLowerCase(Locale.ROOT);
+            services.removeIf(s -> !s.toLowerCase(Locale.ROOT).contains(kw));
+            Collections.sort(services); return services;
+        } catch (Exception e) { throw propagate(e); }
+    }
+    private static List<String> extractServiceNames(Object parsed) {
+        if (!(parsed instanceof JSONArray)) throw new IllegalStateException("Unexpected Dubbo Admin services response (expected array)");
+        Set<String> names = new LinkedHashSet<>();
+        for (Object item : (JSONArray) parsed) {
+            String name = item instanceof String ? (String) item : item instanceof JSONObject ? ((JSONObject)item).getString("service") : null;
+            if (name == null) throw new IllegalStateException("Unexpected service entry in Dubbo Admin response");
+            names.add(name);
         }
+        return new ArrayList<>(names);
     }
 
-    private List<String> extractServiceNames(Object parsed) {
-        List<String> list = new ArrayList<>();
-        if (parsed instanceof JSONArray) {
-            JSONArray arr = (JSONArray) parsed;
-            for (Object item : arr) {
-                if (item instanceof String) {
-                    list.add((String) item);
-                } else if (item instanceof JSONObject) {
-                    String service = ((JSONObject) item).getString("service");
-                    if (service != null) list.add(service);
-                }
-            }
+    private String serviceKey(String iface, String version, String group, String cred) throws Exception {
+        // A fully qualified service key can be supplied directly.
+        if (iface.contains(":") || iface.contains("/")) {
+            if (version != null || group != null) throw new IllegalArgumentException("Use either a full service key or separate version/group");
+            return iface;
         }
-        return list;
+        ConfigManager cfg = ConfigManager.getInstance();
+        if (version == null) version = cfg.getProperty("env." + env + ".version");
+        if (group == null) group = cfg.getProperty("env." + env + ".group");
+        HttpUrl query = new HttpUrl.Builder().scheme("http").host("localhost").addPathSegment("service")
+                .addQueryParameter("pattern", "service").addQueryParameter("filter", "*" + iface + "*").build();
+        Object response = request(query.encodedPath() + "?" + query.encodedQuery(), null, cred);
+        if (!(response instanceof JSONArray)) throw new IllegalStateException("Unexpected Dubbo Admin service search response");
+        Set<String> keys = new TreeSet<>();
+        for (Object item : (JSONArray)response) {
+            if (!(item instanceof JSONObject)) continue;
+            JSONObject row = (JSONObject)item;
+            String name = row.getString("service");
+            if (name == null) continue;
+            String rowGroup = row.getString("group"), rowVersion = row.getString("version");
+            int slash = name.indexOf('/'), colon = name.lastIndexOf(':');
+            if (slash >= 0) { rowGroup = name.substring(0, slash); name = name.substring(slash + 1); }
+            colon = name.lastIndexOf(':');
+            if (colon >= 0) { rowVersion = name.substring(colon + 1); name = name.substring(0, colon); }
+            if (!iface.equals(name) || (version != null && !version.equals(empty(rowVersion))) || (group != null && !group.equals(empty(rowGroup)))) continue;
+            keys.add((empty(rowGroup).isEmpty() ? "" : rowGroup + "/") + name + (empty(rowVersion).isEmpty() ? "" : ":" + rowVersion));
+        }
+        if (keys.isEmpty()) throw new IllegalStateException("No matching Dubbo Admin service: " + iface);
+        if (keys.size() != 1) throw new IllegalArgumentException("Multiple service versions/groups: " + keys + "; specify version and group");
+        return keys.iterator().next();
     }
-
-    private <T> T executeWithAuthRetry(Action<T> action) throws Exception {
+    private static String empty(String s) { return s == null ? "" : s.trim(); }
+    private static String detailPath(String key) {
+        return new HttpUrl.Builder().scheme("http").host("localhost").addPathSegment("service")
+                .addPathSegment(key.replace('/', '*')).build().encodedPath();
+    }
+    @Override public Map<String, Object> getServiceMetadata(String iface) { return getServiceMetadata(iface, null, null); }
+    @Override public Map<String, Object> getServiceMetadata(String iface, String version, String group) {
         try {
-            return action.run();
-        } catch (SessionExpiredException e) {
-            System.err.println("[DubboAdminDriver] " + e.getMessage() + ". Clearing credentials and re-authenticating...");
-            sessionManager.clearCredential(env);
-            // Retry once with new authentication
-            return action.run();
-        }
+            String cred = credential(), key = serviceKey(iface, version, group, cred);
+            Object detail = request(detailPath(key), null, cred);
+            if (!(detail instanceof JSONObject)) throw new IllegalStateException("Unexpected service detail response");
+            Map<String, Object> result = new LinkedHashMap<>(); result.put("interface", iface); result.put("service", key); result.put("details", detail);
+            return result;
+        } catch (Exception e) { throw propagate(e); }
     }
-
-    private interface Action<T> {
-        T run() throws Exception;
+    @Override public Object invoke(String iface, String method, String[] types, Object[] args) throws Exception { return invoke(iface, method, types, args, null, null); }
+    @Override public Object invoke(String iface, String method, String[] types, Object[] args, String version, String group) throws Exception {
+        String cred = credential(), key = serviceKey(iface, version, group, cred);
+        Object[] values = args == null ? new Object[0] : args;
+        JSONObject detail = (JSONObject) request(detailPath(key), null, cred);
+        JSONObject metadata = detail.getJSONObject("metadata");
+        types = MethodSignatures.resolve(metadata == null ? null : metadata.getJSONArray("methods"), method, types, values.length);
+        JSONObject payload = new JSONObject(); payload.put("service", key); payload.put("method", method);
+        payload.put("parameterTypes", types); payload.put("params", values);
+        // Never retry a test invocation: a timeout can occur after a mutation has completed.
+        return request("/test", payload, cred);
     }
-
-    private static class SessionExpiredException extends RuntimeException {
-        public SessionExpiredException(String msg) {
-            super(msg);
-        }
-    }
+    private static RuntimeException propagate(Exception e) { return e instanceof RuntimeException ? (RuntimeException)e : new IllegalStateException(e.getMessage()); }
 }

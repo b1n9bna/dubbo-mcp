@@ -63,4 +63,9 @@ public class TwoStageToolRegistryTest {
         Assert.assertTrue(masked.contains("138****5678"));
         Assert.assertTrue(masked.contains("110101********2345"));
     }
+    @Test public void maskingKeepsNumericJsonValid() {
+        String result = SecurityGuard.maskSensitiveData("{\"id\":13812345678,\"phone\":\"13812345678\"}");
+        Assert.assertEquals(13812345678L, com.alibaba.fastjson2.JSON.parseObject(result).getLongValue("id"));
+        Assert.assertEquals("138****5678", com.alibaba.fastjson2.JSON.parseObject(result).getString("phone"));
+    }
 }

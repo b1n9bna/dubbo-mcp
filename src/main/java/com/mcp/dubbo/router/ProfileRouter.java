@@ -72,20 +72,23 @@ public class ProfileRouter {
     }
 
     public String resolveEnv(String explicitEnv) {
-        if (explicitEnv != null && !explicitEnv.trim().isEmpty()) {
-            return explicitEnv.trim();
-        }
-        return configManager.getActiveEnv();
+        String env = explicitEnv == null || explicitEnv.trim().isEmpty() ? configManager.getActiveEnv() : explicitEnv.trim();
+        if (!env.matches("[A-Za-z0-9_-]+") || !getConfiguredEnvs().contains(env))
+            throw new IllegalArgumentException("Unknown environment: " + env);
+        return env;
+    }
+
+    public Map<String, Object> getServiceMetadata(String env, String iface, String version, String group) {
+        return getDriverForEnv(resolveEnv(env)).getServiceMetadata(iface, version, group);
     }
 
     public synchronized RpcDriver getDriverForEnv(String env) {
-        return driverCache.computeIfAbsent(env, e -> {
-            String type = configManager.getProperty("env." + e + ".type", "zookeeper");
-            if ("dubbo-admin".equalsIgnoreCase(type)) {
-                return new DubboAdminDriver(e);
-            } else {
-                return new DubboDirectDriver(e);
-            }
+        String checked = resolveEnv(env);
+        return driverCache.computeIfAbsent(checked, e -> {
+            String type = configManager.getProperty("env." + e + ".type");
+            if ("dubbo-admin".equalsIgnoreCase(type)) return new DubboAdminDriver(e);
+            if ("zookeeper".equalsIgnoreCase(type)) return new DubboDirectDriver(e);
+            throw new IllegalArgumentException("Unsupported driver type: " + type);
         });
     }
 
@@ -93,7 +96,7 @@ public class ProfileRouter {
         Set<String> envs = new LinkedHashSet<>();
         Properties props = configManager.getRawProperties();
         for (String key : props.stringPropertyNames()) {
-            if (key.startsWith("env.") && key.contains(".type")) {
+            if (key.startsWith("env.") && key.endsWith(".type")) {
                 String envName = key.substring(4, key.indexOf(".type"));
                 envs.add(envName);
             }

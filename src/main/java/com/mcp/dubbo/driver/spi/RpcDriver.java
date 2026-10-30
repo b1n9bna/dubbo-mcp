@@ -42,4 +42,7 @@ public interface RpcDriver {
      * Retrieves method signatures and parameter schemas for the given interface.
      */
     Map<String, Object> getServiceMetadata(String interfaceName);
+    default Map<String, Object> getServiceMetadata(String interfaceName, String version, String group) {
+        return getServiceMetadata(interfaceName);
+    }
 }

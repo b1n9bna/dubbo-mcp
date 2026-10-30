@@ -55,17 +55,8 @@ public class AgentAutoInstaller {
             }
 
             String existing = readFile(configFile);
-            if (existing.contains("[mcp.servers.dubbo]")) {
-                System.err.println("✓ Codex: 配置文件已有 [mcp.servers.dubbo]，已跳过重复注入 (" + codexPath + ")");
-                return true;
-            }
-
-            String tomlSnippet = "\n# --- Dubbo-MCP Server Configuration ---\n" +
-                    "[mcp.servers.dubbo]\n" +
-                    "command = \"java\"\n" +
-                    "args = [\"-jar\", \"" + jarPath + "\"]\n";
-
-            writeFile(configFile, existing + tomlSnippet);
+            String updated = CodexTomlInstaller.configure(existing, jarPath);
+            if (!updated.equals(existing)) writeFile(configFile, updated);
             System.err.println("✅ Codex: 成功配置 " + codexPath);
             return true;
         } catch (Exception e) {
@@ -106,6 +97,10 @@ public class AgentAutoInstaller {
                 root.put("mcpServers", mcpServers);
             }
 
+            if (mcpServers.containsKey("dubbo")) {
+                System.err.println("Existing dubbo MCP entry preserved: " + configPathFor(configFile));
+                return true;
+            }
             JSONObject dubboServer = new JSONObject();
             dubboServer.put("command", "java");
             dubboServer.put("args", new String[]{"-jar", jarPath});
@@ -142,6 +137,10 @@ public class AgentAutoInstaller {
                 root.put("mcpServers", mcpServers);
             }
 
+            if (mcpServers.containsKey("dubbo")) {
+                System.err.println("Existing dubbo MCP entry preserved: " + configPathFor(configFile));
+                return true;
+            }
             JSONObject dubboServer = new JSONObject();
             dubboServer.put("command", "java");
             dubboServer.put("args", new String[]{"-jar", jarPath});
@@ -177,16 +176,14 @@ public class AgentAutoInstaller {
         }
     }
 
-    private static String readFile(File file) {
+    private static String readFile(File file) throws java.io.IOException {
         if (!file.exists()) return "";
         try (FileInputStream fis = new FileInputStream(file)) {
-            byte[] data = new byte[(int) file.length()];
-            int read = fis.read(data);
-            return read > 0 ? new String(data, 0, read, StandardCharsets.UTF_8) : "";
-        } catch (Exception e) {
-            return "";
+            return new String(java.nio.file.Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
         }
     }
+
+    private static String configPathFor(File file) { return file.getAbsolutePath(); }
 
     private static void writeFile(File file, String content) throws Exception {
         try (FileOutputStream fos = new FileOutputStream(file)) {

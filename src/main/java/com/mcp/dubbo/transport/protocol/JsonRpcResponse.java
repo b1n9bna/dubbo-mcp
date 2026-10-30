@@ -82,6 +82,7 @@ public class JsonRpcResponse {
         this.jsonrpc = jsonrpc;
     }
 
+    @com.alibaba.fastjson2.annotation.JSONField(serializeFeatures = com.alibaba.fastjson2.JSONWriter.Feature.WriteNulls)
     public Object getId() {
         return id;
     }

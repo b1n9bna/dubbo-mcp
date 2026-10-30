@@ -34,27 +34,31 @@ public class StdioJsonRpcServer {
                     continue;
                 }
 
-                try {
-                    JsonRpcRequest request = JSON.parseObject(line, JsonRpcRequest.class);
-                    if (request == null || request.getMethod() == null) {
-                        continue;
-                    }
+                String response = processLine(line);
+                if (response != null) { rpcOut.println(response); rpcOut.flush(); }
 
-                    // Process request
-                    JsonRpcResponse response = handleRequest(request);
-
-                    // Notifications (requests without 'id') do not require a response
-                    if (request.getId() != null && response != null) {
-                        String jsonResponse = JSON.toJSONString(response);
-                        rpcOut.println(jsonResponse);
-                        rpcOut.flush();
-                    }
-                } catch (Exception e) {
-                    System.err.println("[StdioJsonRpcServer] Error processing message: " + e.getMessage());
-                }
             }
         } catch (Exception e) {
             System.err.println("[StdioJsonRpcServer] Stdio connection closed: " + e.getMessage());
+        }
+    }
+
+    String processLine(String line) {
+        JSONObject object;
+        try { object = JSON.parseObject(line); }
+        catch (Exception e) { return JSON.toJSONString(JsonRpcResponse.error(null, -32700, "Parse error")); }
+        if (object == null || !"2.0".equals(object.getString("jsonrpc")) || !(object.get("method") instanceof String)
+                || (object.get("id") != null && !(object.get("id") instanceof String) && !(object.get("id") instanceof Number)))
+            return JSON.toJSONString(JsonRpcResponse.error(null, -32600, "Invalid Request"));
+        // Notifications never invoke business tools or generate a response.
+        if (!object.containsKey("id") || object.get("id") == null) return null;
+        Object id = object.get("id");
+        try {
+            if (object.get("params") != null && !(object.get("params") instanceof Map))
+                return JSON.toJSONString(JsonRpcResponse.error(id, -32602, "params must be an object"));
+            return JSON.toJSONString(handleRequest(object.toJavaObject(JsonRpcRequest.class)));
+        } catch (Exception e) {
+            return JSON.toJSONString(JsonRpcResponse.error(id, -32602, "Invalid request parameters"));
         }
     }
 
@@ -100,6 +104,8 @@ public class StdioJsonRpcServer {
                     return JsonRpcResponse.error(id, -32602, "Invalid params: params object is missing");
                 }
 
+                if (!(params.get("name") instanceof String) || (params.get("arguments") != null && !(params.get("arguments") instanceof Map)))
+                    return JsonRpcResponse.error(id, -32602, "name must be a string and arguments must be an object");
                 String toolName = (String) params.get("name");
                 @SuppressWarnings("unchecked")
                 Map<String, Object> arguments = (Map<String, Object>) params.get("arguments");

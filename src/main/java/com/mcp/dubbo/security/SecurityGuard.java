@@ -41,10 +41,25 @@ public class SecurityGuard {
         if (jsonText == null || jsonText.isEmpty()) {
             return jsonText;
         }
-        // Mask mobile: 13812345678 -> 138****5678
-        String masked = PHONE_PATTERN.matcher(jsonText).replaceAll("$1****$2");
-        // Mask ID card: 110101199003072345 -> 110101********2345
-        masked = ID_CARD_PATTERN.matcher(masked).replaceAll("$1********$2");
-        return masked;
+        Object parsed = com.alibaba.fastjson2.JSON.parse(jsonText);
+        return com.alibaba.fastjson2.JSON.toJSONString(maskValue(parsed));
+    }
+    private static Object maskValue(Object value) {
+        if (value instanceof String) {
+            String masked = PHONE_PATTERN.matcher((String)value).replaceAll("$1****$2");
+            return ID_CARD_PATTERN.matcher(masked).replaceAll("$1********$2");
+        }
+        if (value instanceof java.util.Map) {
+            java.util.Map<String,Object> result = new java.util.LinkedHashMap<>();
+            for (java.util.Map.Entry<?,?> entry : ((java.util.Map<?,?>)value).entrySet())
+                result.put(String.valueOf(entry.getKey()), maskValue(entry.getValue()));
+            return result;
+        }
+        if (value instanceof java.util.List) {
+            java.util.List<Object> result = new java.util.ArrayList<>();
+            for (Object entry : (java.util.List<?>)value) result.add(maskValue(entry));
+            return result;
+        }
+        return value; // Never corrupt JSON numbers or change numeric identifiers into invalid JSON.
     }
 }

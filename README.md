@@ -126,7 +126,8 @@ active.env=test
 env.test.type=zookeeper
 env.test.registry=zookeeper://192.168.1.10:2181
 env.test.timeout=5000
-env.test.readonly=false                       # 测试环境允许调写接口造数据
+# 测试环境允许调写接口造数据
+env.test.readonly=false
 
 # ==============================================================================
 # 2. 预发环境 (UAT / Staging)
@@ -141,8 +142,10 @@ env.uat.readonly=true
 # ==============================================================================
 env.prod.type=dubbo-admin
 env.prod.admin_url=https://dubbo-admin.yourcompany.com
-env.prod.readonly=true                       # 生产强行锁死只读保护！
-env.prod.data_masking=true                   # 自动对返回的手机号、身份证脱敏打码
+# 生产按方法名规则限制调用
+env.prod.readonly=true
+# 对字符串中的手机号、身份证脱敏，保留 JSON 数值类型
+env.prod.data_masking=true
 
 # ==============================================================================
 # 4. 安全风控守卫 (Security Guards)
@@ -150,53 +153,37 @@ env.prod.data_masking=true                   # 自动对返回的手机号、身
 # 当环境为 readonly=true 时，仅允许匹配该正则的方法名被执行，其余写操作硬阻断
 security.readonly.regex=^(get|query|find|select|list|count|check|is|search|fetch|read).*$
 
-# 本地回环登录服务端口
-auth.callback.port=20888
+# 自定义 Admin API 上下文（可选，不包含 /api/dev）
+# env.prod.admin_api_prefix=/dubbo-admin
 ```
 
 ---
 
-## 🔐 核心攻坚：单点登录 (SSO) 到底怎么办？
+## 🔐 登录 Dubbo Admin
 
-各大企业内部部署的 `dubbo-admin` 几乎 100% 接入了企业的 **SSO 单点登录（飞书扫码、企业微信扫码、钉钉、CAS、OAuth2、动态口令）**。
+MCP 调用不会等待交互式登录。缺少或过期的凭据会立即返回工具错误。
 
-> **核心原则**：不要在命令行里去痛苦地抓包或硬编码复杂的 SSO 扫码协议。**让用户在最熟悉的浏览器里完成扫码登录，由 Dubbo-MCP 负责把会话优雅地同步过来并自动保活。**
+1. 在浏览器中登录 Dubbo Admin，在该站点的开发者控制台执行：
 
-Dubbo-MCP 提供三种梯级方案：
-
-### 方案 A：浏览器一键回环授权（最推荐，类似 Google 登录体验）
-
-当你在 Codex 中第一次向生产环境发起查询时：
-1. **自动唤起浏览器**：终端检测到未登录，自动打开你的默认浏览器；
-2. **完成日常登录**：浏览器打开公司的 `dubbo-admin`，你正常使用飞书/企业微信扫码登录；
-3. **一键同步会话**：
-   - 将授权页面的 **【📌 同步至 Dubbo-MCP】** 按钮拖拽到浏览器收藏夹；
-   - 在已登录的 `dubbo-admin` 页面**随手点一下该书签**，页面弹出 *“✅ 登录态已成功同步”*；
-4. **后台自动心跳保活**：
-   - 底座每 5 分钟向 `dubbo-admin` 发送一次轻量探活请求，维持会话长期有效，**全天无需重复登录**。
-
----
-
-### 方案 B：静态 Cookie / cURL 粘贴（极客与内网限制模式）
-
-如果企业浏览器开启了极严的跨域策略：
-1. 打开浏览器登录 `dubbo-admin`，按 `F12` 打开控制台；
-2. 在 Network 界面任意一个成功的接口请求上右键 -> **Copy as cURL**；
-3. 直接将里面的 Cookie 粘贴到 `~/.dubbo-mcp/config.properties`：
-   ```properties
-   env.prod.admin_cookie=SESSION=xxxxxx; JSESSIONID=yyyyyy;
+   ```javascript
+   copy(JSON.stringify({cookie: document.cookie, authorization: localStorage.getItem('token')}))
    ```
 
----
+2. macOS 终端执行：
 
-### 方案 C：原生账密全自动托管（0 门槛）
+   ```sh
+   dubbo-mcp login --env=prod --clipboard
+   ```
 
-如果你们的 `dubbo-admin` 是标准的账号密码登录（非 SSO 扫码）：
-在配置文件填入账号密码，底座启动时全自动调用登录接口换取 Token，**全程 100% 静默无感**：
-```properties
-env.prod.admin_username=your_username
-env.prod.admin_password=your_password
-```
+   也可使用 `dubbo-mcp login --file /path/to/credential.json`，或通过管道传入 `dubbo-mcp login --stdin`。无参数的 `login` 支持隐藏回显的交互输入；Unix 终端读取时关闭 canonical 行缓冲，避免长 Cookie 超过终端输入上限后卡住。不要把凭据作为命令行参数或发送到聊天。
+
+3. CLI 会先调用只读服务列表验证认证，成功后原子保存到 `~/.dubbo-mcp/session-prod.json`（POSIX 文件权限 `0600`）。新版 MCP 每次请求重新读取该文件，之后更换凭据无需重启；更新 JAR 本身后，需要重启已有 MCP 进程。
+
+该部署使用 Cookie 携带网关会话，并把 `localStorage.token` **原样**放入 `Authorization`，不擅自添加 `Bearer`。其他部署也支持纯 Cookie、`Bearer ...`、`Authorization: ...` 或上述 JSON。只有 Cookie 无法保证 Dubbo Admin 自身认证通过。登录失效后重新执行上述步骤；不承诺心跳可延长服务端会话。
+
+兼容旧配置 `env.prod.admin_cookie`，但 CLI 保存的会话优先，避免旧配置遮蔽新登录。默认从 Admin 首页静态资源路径识别 `/dubbo-admin` 上下文；自定义部署可设置 `env.prod.admin_api_prefix=/custom`（根路径部署设为空）。不支持的 API 返回明确错误，不当作空服务列表。
+
+原生账号密码部署可配置 `env.prod.admin_username` / `env.prod.admin_password`，按当前 Admin 的 `GET /api/dev/user/login` 契约换取 token，再验证保存。仅用于匹配该 API 的部署；SSO 请使用浏览器登录。
 
 ---
 
@@ -252,14 +239,14 @@ MCP 依赖进程的标准输入输出（STDIO）进行通信。Spring Boot 启�
 <details>
 <summary><b>Q2: 复杂的 Java DTO 入参（枚举、嵌套对象）不需要引 Jar 包吗？参数类型怎么填？</b></summary>
 完全不需要！Dubbo-MCP 基于 Dubbo 原生的<strong>泛化调用 (Generic Invocation)</strong>，并内置了<strong>元数据自适应引擎</strong>：
-1. <strong>全自动类型反查</strong>：Dubbo-MCP 会直接从 ZooKeeper 元数据中心读取接口定义的真实 DTO 类名（如 <code>ClearancePriceInfoQueryDTO</code>），AI Agent 调用时即使不指定 <code>paramTypes</code>，底层也会自动匹配方法签名，杜绝 <code>NoSuchMethodException</code>。
+1. <strong>全自动类型反查</strong>：Dubbo-MCP 会直接从 ZooKeeper 元数据中心读取接口定义的真实 DTO 类名（如 <code>ClearancePriceInfoQueryDTO</code>），AI Agent 调用时即使不指定 <code>paramTypes</code>，底层仅在同名、同参数数量的签名唯一时自动匹配。缺少元数据或存在重载歧义时，请显式传入 <code>paramTypes</code>，显式的 Map/Object 类型不会被替换。
 2. <strong>字段结构透出</strong>：调用 <code>dubbo_get_service_detail</code> 时，不仅能看到方法，还会直接返回入参 DTO 的全部字段属性（如 <code>current, size, calculationDateList</code>），AI 助手无需查看 Java 源码即可直接准确构造入参！
-3. <strong>版本与分组自适应</strong>：自动探测注册中心上的 <code>version</code>（如 <code>1.0.0</code>）与 <code>group</code>（如 <code>JF</code>），零配置即可精准路由到对应 Provider。
+3. <strong>版本与分组自适应</strong>：自动探测注册中心上的 <code>version</code>（如 <code>1.0.0</code>）与 <code>group</code>（如 <code>JF</code>），仅在匹配的版本与分组组合唯一时自动选择；存在多组候选时必须指定 <code>version</code> / <code>group</code>，不随意选择第一个。
 </details>
 
 <details>
 <summary><b>Q3: 提示 "Session expired" 怎么办？</b></summary>
-在浏览器里重新打开 `dubbo-admin` 页面，随手点一下书签栏的【📌 同步至 Dubbo-MCP】，0.1 秒即可恢复授权。
+在浏览器重新登录后，按上文复制 Cookie + Authorization JSON，运行 `dubbo-mcp login --clipboard`；通过验证后才能恢复调用。
 </details>
 
 ---
@@ -272,3 +259,15 @@ Dubbo-MCP 设计了清晰的扩展接口，欢迎社区提交 PR：
 * `SecurityFilter`：扩展企业自研风控与脱敏审计链。
 
 **如果对你的日常工作有帮助，欢迎点一个 Star ⭐️ 支持！**
+
+## 本地验证
+
+```sh
+# macOS 下含中文目录时使用系统支持的 UTF-8 locale
+LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 mvn test
+LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 mvn package
+```
+
+回归测试使用本机模拟 HTTP 服务和临时凭据目录，不访问生产业务。覆盖认证 header、API 路径、服务版本/分组、异常返回、重载歧义、跨进程凭据刷新、文件权限、JSON-RPC 错误响应、配置保留和 JSON 脱敏。
+
+Codex 使用 `[mcp_servers.dubbo]` 配置节（[官方文档](https://developers.openai.com/learn/docs-mcp)）。安装器保留已有自定义命令和参数；旧 `[mcp.servers.dubbo]` 节在没有新节时迁移。下载或 JAR 校验失败会停止安装并保留旧 JAR。

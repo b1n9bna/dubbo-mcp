@@ -43,6 +43,8 @@ public class TwoStageToolRegistry {
         detailSchema.put("type", "object");
         Map<String, Object> detailProps = new LinkedHashMap<>();
         detailProps.put("interfaceName", Collections.singletonMap("type", "string"));
+        detailProps.put("version", Collections.singletonMap("type", "string"));
+        detailProps.put("group", Collections.singletonMap("type", "string"));
         detailProps.put("env", Collections.singletonMap("type", "string"));
         detailSchema.put("properties", detailProps);
         detailSchema.put("required", Collections.singletonList("interfaceName"));
@@ -59,7 +61,9 @@ public class TwoStageToolRegistry {
         Map<String, Object> invokeProps = new LinkedHashMap<>();
         invokeProps.put("interfaceName", Collections.singletonMap("type", "string"));
         invokeProps.put("method", Collections.singletonMap("type", "string"));
-        invokeProps.put("paramTypes", Collections.singletonMap("type", "array"));
+        Map<String, Object> typeArray = new LinkedHashMap<>();
+        typeArray.put("type", "array"); typeArray.put("items", Collections.singletonMap("type", "string"));
+        invokeProps.put("paramTypes", typeArray);
         invokeProps.put("args", Collections.singletonMap("type", "array"));
         invokeProps.put("version", Collections.singletonMap("type", "string"));
         invokeProps.put("group", Collections.singletonMap("type", "string"));
@@ -122,20 +126,32 @@ public class TwoStageToolRegistry {
                 if (iface == null || iface.trim().isEmpty()) {
                     throw new IllegalArgumentException("interfaceName is required");
                 }
-                Map<String, Object> meta = profileRouter.getServiceMetadata(env, iface.trim());
+                Map<String, Object> meta = profileRouter.getServiceMetadata(env, iface.trim(), (String) arguments.get("version"), (String) arguments.get("group"));
                 return JSON.toJSONString(meta);
             }
 
             case "dubbo_invoke": {
                 String iface = (String) arguments.get("interfaceName");
                 String method = (String) arguments.get("method");
-                if (iface == null || method == null) {
+                if (iface == null || iface.trim().isEmpty() || method == null || method.trim().isEmpty()) {
                     throw new IllegalArgumentException("interfaceName and method are required");
                 }
 
                 String[] rawParamTypes = parseStringArray(arguments.get("paramTypes"));
                 Object[] args = parseObjectArray(arguments.get("args"));
-                String[] paramTypes = normalizeParamTypes(rawParamTypes, args);
+                if (arguments.containsKey("paramTypes") && rawParamTypes.length != args.length)
+                    throw new IllegalArgumentException("paramTypes count must match args count");
+                String[] paramTypes = arguments.containsKey("paramTypes") ? rawParamTypes : null;
+                for (int i = 0; i < args.length; i++) {
+                    // Legacy clients sometimes wrap DTO JSON in a string. Keep actual String parameters intact.
+                    if (paramTypes != null && args[i] instanceof String && !"java.lang.String".equals(paramTypes[i])) {
+                        String value = ((String) args[i]).trim();
+                        if (value.startsWith("{") || value.startsWith("[")) {
+                            try { args[i] = JSON.parse(value); }
+                            catch (Exception e) { throw new IllegalArgumentException("Invalid JSON argument at index " + i); }
+                        }
+                    }
+                }
                 String version = (String) arguments.get("version");
                 String group = (String) arguments.get("group");
 
@@ -161,44 +177,13 @@ public class TwoStageToolRegistry {
                 if (targetEnv == null || targetEnv.trim().isEmpty()) {
                     throw new IllegalArgumentException("env is required");
                 }
-                configManager.setActiveEnv(targetEnv.trim());
+                configManager.setActiveEnv(profileRouter.resolveEnv(targetEnv));
                 return "{\"status\":\"SUCCESS\",\"activeEnv\":\"" + targetEnv.trim() + "\"}";
             }
 
             default:
                 throw new UnsupportedOperationException("Unknown tool: " + toolName);
         }
-    }
-
-    private String[] normalizeParamTypes(String[] paramTypes, Object[] args) {
-        if (args == null || args.length == 0) {
-            return new String[0];
-        }
-        if (paramTypes != null && paramTypes.length == args.length) {
-            return paramTypes;
-        }
-        String[] inferred = new String[args.length];
-        for (int i = 0; i < args.length; i++) {
-            if (paramTypes != null && i < paramTypes.length && paramTypes[i] != null && !paramTypes[i].trim().isEmpty()) {
-                inferred[i] = paramTypes[i].trim();
-            } else {
-                inferred[i] = inferJavaType(args[i]);
-            }
-        }
-        return inferred;
-    }
-
-    private String inferJavaType(Object arg) {
-        if (arg == null) return "java.lang.Object";
-        if (arg instanceof String) return "java.lang.String";
-        if (arg instanceof Long) return "java.lang.Long";
-        if (arg instanceof Integer) return "java.lang.Integer";
-        if (arg instanceof Boolean) return "java.lang.Boolean";
-        if (arg instanceof Double) return "java.lang.Double";
-        if (arg instanceof Float) return "java.lang.Float";
-        if (arg instanceof Map) return "java.util.Map";
-        if (arg instanceof List) return "java.util.List";
-        return arg.getClass().getName();
     }
 
     private String[] parseStringArray(Object obj) {
@@ -208,11 +193,13 @@ public class TwoStageToolRegistry {
             List<?> list = (List<?>) obj;
             String[] arr = new String[list.size()];
             for (int i = 0; i < list.size(); i++) {
-                arr[i] = list.get(i) != null ? list.get(i).toString() : "";
+                if (!(list.get(i) instanceof String) || ((String) list.get(i)).trim().isEmpty())
+                    throw new IllegalArgumentException("paramTypes entries must be nonempty strings");
+                arr[i] = ((String)list.get(i)).trim();
             }
             return arr;
         }
-        return new String[]{obj.toString()};
+        throw new IllegalArgumentException("paramTypes must be an array of strings");
     }
 
     private Object[] parseObjectArray(Object obj) {
@@ -221,6 +208,6 @@ public class TwoStageToolRegistry {
         if (obj instanceof List) {
             return ((List<?>) obj).toArray();
         }
-        return new Object[]{obj};
+        throw new IllegalArgumentException("args must be an array");
     }
 }
