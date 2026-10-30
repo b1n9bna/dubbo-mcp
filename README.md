@@ -1,5 +1,14 @@
 # dubbo-mcp
 
+<p align="center">
+  <img src="https://img.shields.io/badge/JDK-8_|_11_|_17_|_21-blue?style=flat-square&logo=openjdk" alt="JDK 8+">
+  <img src="https://img.shields.io/badge/Cold_Start-<100_ms-brightgreen?style=flat-square&logo=lightning" alt="Cold Start">
+  <img src="https://img.shields.io/badge/RAM_RSS-~25_MB-success?style=flat-square&logo=speedtest" alt="RAM RSS">
+  <img src="https://img.shields.io/badge/Dubbo-2.7.x_|_3.x-orange?style=flat-square&logo=apache" alt="Dubbo Compatible">
+  <img src="https://img.shields.io/badge/Spring_Boot-0%25_(Pure_Java)-informational?style=flat-square&logo=spring" alt="Pure Java">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg?style=flat-square" alt="License"></a>
+</p>
+
 连接 AI 编程助手（Codex、Cursor、Claude Code、ZCode 等）与 Dubbo 微服务的 [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) 服务端。
 
 在日常排查业务问题或联调时，让 AI 助手可以直接检索微服务、查看接口入参结构、并发起接口调用，无需手动编写测试代码或引入业务依赖 Jar 包。
