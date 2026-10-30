@@ -29,36 +29,12 @@ public final class TypeCoercion {
             return arg;
         }
 
-        // 2. Target is Long / long: parse numeric string or convert Number
+        // Integer conversion must preserve both value and range before an RPC can run.
         if ("java.lang.Long".equals(type) || "long".equals(type)) {
-            if (arg instanceof String) {
-                String str = ((String) arg).trim();
-                if (str.matches("^-?\\d+$")) {
-                    try {
-                        return Long.parseLong(str);
-                    } catch (NumberFormatException ignored) {
-                    }
-                }
-            } else if (arg instanceof Number) {
-                return ((Number) arg).longValue();
-            }
-            return arg;
+            return exactInteger(arg, type, true);
         }
-
-        // 3. Target is Integer / int: parse numeric string or convert Number
         if ("java.lang.Integer".equals(type) || "int".equals(type)) {
-            if (arg instanceof String) {
-                String str = ((String) arg).trim();
-                if (str.matches("^-?\\d+$")) {
-                    try {
-                        return Integer.parseInt(str);
-                    } catch (NumberFormatException ignored) {
-                    }
-                }
-            } else if (arg instanceof Number) {
-                return ((Number) arg).intValue();
-            }
-            return arg;
+            return exactInteger(arg, type, false);
         }
 
         // 4. Target is BigDecimal: parse from string or number
@@ -113,5 +89,18 @@ public final class TypeCoercion {
         }
 
         return arg;
+    }
+    private static Object exactInteger(Object arg, String type, boolean asLong) {
+        if (!(arg instanceof Number) && !(arg instanceof String)) {
+            throw new IllegalArgumentException("Cannot convert argument to " + type + ": expected an exact integer");
+        }
+        try {
+            BigDecimal value = new BigDecimal(arg.toString().trim());
+            if (asLong) return Long.valueOf(value.longValueExact());
+            return Integer.valueOf(value.intValueExact());
+        } catch (NumberFormatException | ArithmeticException e) {
+            // Do not include argument values, which may contain sensitive identifiers.
+            throw new IllegalArgumentException("Cannot convert argument to " + type + ": value must be an integer within range");
+        }
     }
 }

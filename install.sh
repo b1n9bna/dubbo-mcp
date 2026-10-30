@@ -39,10 +39,6 @@ STAGED_JAR=$(mktemp "$INSTALL_DIR/dubbo-mcp.XXXXXX")
 trap 'rm -f "$STAGED_JAR"' EXIT HUP INT TERM
 if [ -f "./target/dubbo-mcp.jar" ]; then
     cp "./target/dubbo-mcp.jar" "$STAGED_JAR"
-elif [ -f "./target/dubbo-mcp-1.0.2.jar" ]; then
-    cp "./target/dubbo-mcp-1.0.2.jar" "$STAGED_JAR"
-elif [ -f "./target/dubbo-mcp-1.0.1.jar" ]; then
-    cp "./target/dubbo-mcp-1.0.1.jar" "$STAGED_JAR"
 elif [ -f "./target/dubbo-mcp-1.0.0-SNAPSHOT.jar" ]; then
     cp "./target/dubbo-mcp-1.0.0-SNAPSHOT.jar" "$STAGED_JAR"
 else
@@ -71,16 +67,19 @@ case "$SHELL" in
     *)      SHELL_RC="$HOME/.profile" ;;
 esac
 
-if ! echo "$PATH" | grep -q "$BIN_DIR"; then
-    if [ -f "$SHELL_RC" ]; then
-        if ! grep -q "$BIN_DIR" "$SHELL_RC"; then
-            echo "\n# Dubbo-MCP PATH" >> "$SHELL_RC"
-            echo "export PATH=\"$BIN_DIR:\$PATH\"" >> "$SHELL_RC"
-            echo "✓ Added $BIN_DIR to $SHELL_RC"
-        fi
-    fi
-    export PATH="$BIN_DIR:$PATH"
+# Persist even when the directory was already added to this shell's PATH.
+# A fresh user may not have a startup file yet.
+if [ ! -e "$SHELL_RC" ]; then
+    : > "$SHELL_RC"
 fi
+if ! grep -Fq "$BIN_DIR" "$SHELL_RC"; then
+    printf '\n# Dubbo-MCP PATH\nexport PATH="%s:$PATH"\n' "$BIN_DIR" >> "$SHELL_RC"
+    echo "✓ Added $BIN_DIR to $SHELL_RC"
+fi
+case ":$PATH:" in
+    *":$BIN_DIR:"*) ;;
+    *) export PATH="$BIN_DIR:$PATH" ;;
+esac
 
 # 6. Auto-wire detected AI Coding Agents
 echo ""

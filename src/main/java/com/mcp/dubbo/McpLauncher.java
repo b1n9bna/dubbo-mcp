@@ -15,7 +15,7 @@ public class McpLauncher {
         if (args != null && args.length > 0) {
             for (String arg : args) {
                 if ("install".equalsIgnoreCase(arg) || "--install".equalsIgnoreCase(arg) || "-i".equalsIgnoreCase(arg)) {
-                    com.mcp.dubbo.installer.AgentAutoInstaller.installAll();
+                    if (!com.mcp.dubbo.installer.AgentAutoInstaller.installAll()) System.exit(1);
                     return;
                 } else if ("login".equalsIgnoreCase(arg) || "--login".equalsIgnoreCase(arg)) {
                     runInteractiveLogin(args);

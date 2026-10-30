@@ -3,6 +3,8 @@ package com.mcp.dubbo.router;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+import com.alibaba.fastjson2.JSONPath;
+import java.nio.charset.StandardCharsets;
 import com.mcp.dubbo.config.ConfigManager;
 import com.mcp.dubbo.transport.protocol.McpTool;
 
@@ -14,6 +16,9 @@ import java.util.*;
  * Handles dispatching and parameter conversion.
  */
 public class TwoStageToolRegistry {
+
+    private static final String MINIMAL_TRUNCATED_PAYLOAD =
+            "{\"status\":\"SUCCESS_TRUNCATED\",\"_hint\":\"Use jsonPath to retrieve specific fields\"}";
 
     private final ProfileRouter profileRouter = ProfileRouter.getInstance();
     private final ConfigManager configManager = ConfigManager.getInstance();
@@ -181,16 +186,21 @@ public class TwoStageToolRegistry {
                 String group = (String) arguments.get("group");
                 Map<String, String> attachments = parseAttachments(arguments.get("attachments"));
 
-                Object result = profileRouter.invoke(env, iface.trim(), method.trim(), paramTypes, args, version, group, attachments);
-
+                // Validate projection and response settings before any business side effect.
                 String jsonPath = (String) arguments.get("jsonPath");
+                JSONPath projection = null;
                 if (jsonPath != null && !jsonPath.trim().isEmpty()) {
                     try {
-                        result = com.alibaba.fastjson2.JSONPath.eval(result, jsonPath.trim());
+                        projection = JSONPath.of(jsonPath.trim());
                     } catch (Exception e) {
-                        throw new IllegalArgumentException("Invalid jsonPath expression '" + jsonPath + "': " + e.getMessage());
+                        throw new IllegalArgumentException("Invalid jsonPath expression: " + jsonPath);
                     }
                 }
+                int maxBytes = configManager.getInt("mcp.max_response_bytes", 24576);
+                validateResponseLimit(maxBytes);
+
+                Object result = profileRouter.invoke(env, iface.trim(), method.trim(), paramTypes, args, version, group, attachments);
+                if (projection != null) result = projection.eval(result);
 
                 JSONObject wrapper = new JSONObject();
                 wrapper.put("status", "SUCCESS");
@@ -200,9 +210,9 @@ public class TwoStageToolRegistry {
                 wrapper.put("data", result);
                 String jsonOutput = wrapper.toJSONString();
 
-                int maxBytes = configManager.getInt("mcp.max_response_bytes", 24576);
-                if (jsonOutput.length() > maxBytes) {
-                    return formatTruncatedPayload(wrapper, jsonOutput.length(), maxBytes);
+                int outputBytes = utf8Size(jsonOutput);
+                if (outputBytes > maxBytes) {
+                    return formatTruncatedPayload(wrapper, outputBytes, maxBytes);
                 }
                 return jsonOutput;
             }
@@ -286,6 +296,7 @@ public class TwoStageToolRegistry {
     }
 
     public static String formatTruncatedPayload(JSONObject wrapper, int originalSize, int maxBytes) {
+        validateResponseLimit(maxBytes);
         Object data = wrapper.get("data");
         Object truncatedData = truncateRecursive(data, 0);
         JSONObject guarded = new JSONObject();
@@ -297,11 +308,23 @@ public class TwoStageToolRegistry {
         guarded.put("_hint", "Use the 'jsonPath' argument in dubbo_invoke (e.g. '$.data.status', '$.data.items[*].skuName') to retrieve specific nested fields without truncation.");
         guarded.put("data", truncatedData);
         String res = guarded.toJSONString();
-        if (res.length() > maxBytes) {
+        if (utf8Size(res) > maxBytes) {
             guarded.put("data", Collections.singletonMap("_truncated", "Content deeply truncated due to extreme size; use jsonPath to query specific paths"));
-            return guarded.toJSONString();
+            res = guarded.toJSONString();
         }
-        return res;
+        // Very long interface/method names can make even the envelope exceed the cap.
+        return utf8Size(res) <= maxBytes ? res : MINIMAL_TRUNCATED_PAYLOAD;
+    }
+
+    private static int utf8Size(String value) {
+        return value.getBytes(StandardCharsets.UTF_8).length;
+    }
+
+    private static void validateResponseLimit(int maxBytes) {
+        int minimum = utf8Size(MINIMAL_TRUNCATED_PAYLOAD);
+        if (maxBytes < minimum) {
+            throw new IllegalArgumentException("mcp.max_response_bytes must be at least " + minimum);
+        }
     }
 
     private static Object truncateRecursive(Object obj, int depth) {

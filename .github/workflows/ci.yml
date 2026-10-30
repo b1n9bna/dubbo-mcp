@@ -49,3 +49,20 @@ jobs:
       - name: Verify CLI Executable
         run: |
           java -jar target/dubbo-mcp.jar --help
+
+      - name: Verify offline runtime boundaries
+        timeout-minutes: 3
+        run: |
+          python3 scripts/smoke_limits.py target/dubbo-mcp.jar
+          python3 scripts/smoke_http_limits.py target/dubbo-mcp.jar
+          python3 scripts/smoke_install.py
+          python3 scripts/smoke_login.py target/dubbo-mcp.jar
+
+  windows-installer:
+    name: Windows installer regression
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify artifact selection and failed validation rollback
+        shell: powershell
+        run: ./scripts/smoke_install.ps1

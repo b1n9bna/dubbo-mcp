@@ -221,12 +221,12 @@ Once configured, interact with your microservices using plain natural language i
 
 To safeguard production invocation and LLM stability:
 1. **Dual-Track Service Search**: User queries like "oms" match services by both interface package names and provider `application` names (e.g. `cn.wangoon.trade.OrderRpcService (app: oms-provider)`).
-2. **Precision Loss Prevention & Type Coercion**: 64-bit Snowflake IDs and order numbers passed as strings (e.g. `"202610080001"`) are safely coerced into `Long`, `BigDecimal`, or DTO maps without JavaScript 53-bit floating-point truncation.
+2. **Precision Loss Prevention & Type Coercion**: 64-bit Snowflake IDs and order numbers passed as strings (e.g. `"202610080001"`) are safely coerced into `Long`, `BigDecimal`, or DTO maps without JavaScript 53-bit floating-point truncation. Conversions to `int`/`long` reject fractional, non-finite, and out-of-range values before invocation.
 3. **Implicit Arguments (`RpcContext` Attachments)**: Forward multi-tenant IDs, trace IDs, and routing tags via request `attachments` or environment properties (`env.<env>.attachment.<key>`).
-4. **Context Explosion Protection & JSONPath**: Responses larger than 24KB are structured-truncated into valid JSON envelopes with extraction hints, and `jsonPath` (e.g. `$.data.items[0]`) allows targeted extraction.
+4. **Context Explosion Protection & JSONPath**: Responses larger than 24KB of UTF-8 bytes are structured-truncated into valid JSON envelopes with extraction hints, and `jsonPath` (e.g. `$.data.items[0]`) allows targeted extraction. JSONPath syntax is validated before RPC execution. `mcp.max_response_bytes` sets the byte cap; limits too small to fit the minimal truncation envelope are rejected before invocation.
 5. **Provider Signature Self-Healing**: When metadata reports are absent, provider reflection errors (`Available methods: [...]`) are transformed into actionable parameter type advice for zero-touch LLM self-healing.
-6. **Read-Only Method Regex Guard**: In environments with `readonly=true`, mutating operations (`update*`, `delete*`, `save*`) are blocked immediately.
-7. **Sensitive Data Masking**: Automatic masking for Chinese mobile numbers (`138****5678`) and National IDs (`110101********2345`).
+6. **Read-Only Method Regex Guard**: In environments with `readonly=true`, mutating operations (`update*`, `delete*`, `save*`) are blocked immediately. Boolean settings accept only `true` or `false`; invalid values stop the call.
+7. **Sensitive Data Masking**: Automatic masking for Chinese mobile numbers (`138****5678`) and National IDs (`110101********2345`), including tool error messages when `data_masking=true`.
 
 ---
 
@@ -354,3 +354,27 @@ LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 mvn test
 # Build shaded Fat-JAR
 LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 mvn package -DskipTests
 ```
+
+### Discovery and installation failures
+
+Admin discovery follows recognized pagination cursors (Spring `page`, MyBatis `current`, PageHelper `pageNum`, and `currPage`). An incomplete, repeated, or unverifiable page causes an error instead of selecting from partial results; discovery is bounded to 100 pages. Authentication, network, and server failures are preserved. Endpoint fallback is restricted to HTTP 404/405/501 and is shared by login verification and service discovery. Complete explicit `paramTypes` avoid metadata requests during invocation.
+
+`dubbo-mcp install` distinguishes configured, skipped, and failed clients. An absent optional client can be skipped; any configuration write failure produces a nonzero exit status, including partial failures.
+
+### Runtime responsiveness and startup errors
+
+Existing user configuration that cannot be read or parsed stops startup; it never silently changes the target environment to the bundled default. Missing user configuration still uses the bundled defaults.
+
+Tools execute serially through a queue with 16 waiting slots, preserving environment-switch ordering. Protocol control messages such as `ping` remain responsive during tool calls. `mcp.request_timeout_ms` bounds each accepted tool request, including queue time (default 60000 ms). A full queue returns an explicit error without executing the rejected request. [MCP cancellation notifications](https://modelcontextprotocol.io/specification/2025-06-18/basic/utilities/cancellation) cancel queued work and interrupt running work without returning the cancelled response. Cancellation and timeout cannot guarantee rollback of a remote write; do not automatically retry writes. On stdin EOF, the server allows `mcp.shutdown_timeout_ms` (default 5000 ms) for accepted work to finish, then cancels remaining work.
+
+The POSIX installer creates the shell startup file if absent and adds its PATH entry idempotently. Run `python3 scripts/smoke_install.py` for the offline first-install regression.
+
+STDIO frames are limited to `mcp.max_request_bytes` (default 1 MiB, configurable from 1 byte to 8 MiB). Oversized frames are discarded through the next line delimiter and receive an error with a null ID; subsequent messages remain usable. `python3 scripts/smoke_limits.py target/dubbo-mcp.jar` verifies recovery in a disposable 24 MiB JVM.
+
+Configuration files use strict UTF-8 (optional BOM); Java `\uXXXX` escapes remain supported. Invalid encoding aborts startup. Failed Admin context detection is not cached, allowing the next request to recover after a transient outage; `admin_api_prefix` can explicitly select a root or custom deployment.
+
+Admin HTTP bodies are bounded before decoding/parsing by `env.<env>.admin_max_response_bytes` (default 1 MiB, configurable up to 16 MiB). The bound applies to decompressed gzip data as well as known-length and chunked responses, including login and context discovery. Oversized responses return an error; reduce the remote page size or adjust this bound.
+
+ZooKeeper service discovery respects the registry URL's `group` namespace, for example `zookeeper://127.0.0.1:2181?group=team-a`. This is separate from `env.<env>.group`, which selects a Dubbo service group such as `blue`.
+
+Windows installation prioritizes `target/dubbo-mcp.jar`, with the legacy `1.0.0-SNAPSHOT` fat JAR as a fallback. Versioned thin Maven JARs are not installed. `scripts/smoke_install.ps1` tests selection, offline download fallback and preservation of the installed JAR after validation failure in Windows CI.

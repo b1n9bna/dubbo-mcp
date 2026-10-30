@@ -53,6 +53,9 @@ public class ProfileRouter {
         // 1. Safety check (blocks write operations if environment is read-only)
         SecurityGuard.checkSafety(targetEnv, interfaceName, method);
 
+        // Validate privacy configuration before any business side effect.
+        boolean mask = configManager.getBoolean("env." + targetEnv + ".data_masking", false);
+
         // 2. Resolve and merge attachments (default env attachments + call attachments)
         Map<String, String> mergedAttachments = new LinkedHashMap<>(configManager.getEnvAttachments(targetEnv));
         if (attachments != null && !attachments.isEmpty()) {
@@ -67,7 +70,6 @@ public class ProfileRouter {
         Object rawResult = driver.invoke(interfaceName, method, paramTypes, args, version, group, mergedAttachments);
 
         // 4. Mask sensitive data if data_masking is enabled
-        boolean mask = configManager.getBoolean("env." + targetEnv + ".data_masking", false);
         if (mask) {
             String jsonStr = JSON.toJSONString(rawResult);
             String maskedJson = SecurityGuard.maskSensitiveData(jsonStr);

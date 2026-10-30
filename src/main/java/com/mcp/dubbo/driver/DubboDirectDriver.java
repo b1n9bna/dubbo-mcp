@@ -31,6 +31,7 @@ public class DubboDirectDriver implements RpcDriver {
 
     private final String env;
     private final String registryUrl;
+    private final String registryRoot;
     private final int timeout;
     private final ApplicationConfig applicationConfig;
     private final RegistryConfig registryConfig;
@@ -55,9 +56,16 @@ public class DubboDirectDriver implements RpcDriver {
         } else if (normalizedUrl.startsWith("zk://")) {
             normalizedUrl = "zookeeper://" + normalizedUrl.substring("zk://".length());
         }
+        URL registryAddress = URL.valueOf(normalizedUrl);
+        String namespace = registryAddress.getParameter("group", "dubbo");
+        this.registryRoot = namespace.startsWith("/") ? namespace : "/" + namespace;
         this.registryConfig = new RegistryConfig(normalizedUrl);
         this.registryConfig.setRegister(false);
         Runtime.getRuntime().addShutdownHook(new Thread(this::close, "dubbo-mcp-close-" + env));
+    }
+
+    private String registryPath(String suffix) {
+        return registryRoot + (registryRoot.endsWith("/") ? "" : "/") + suffix;
     }
 
     @Override
@@ -214,7 +222,7 @@ public class DubboDirectDriver implements RpcDriver {
         Set<String> candidates = new TreeSet<>();
         try {
             CuratorFramework client = getCuratorClient();
-            String path = "/dubbo/" + iface + "/providers";
+            String path = registryPath(iface + "/providers");
             if (client.checkExists().forPath(path) != null) for (String node : client.getChildren().forPath(path)) {
                 URL url = URL.valueOf(URLDecoder.decode(node, "UTF-8"));
                 if (!url.getParameter("enabled", true) || url.getParameter("disabled", false)) continue;
@@ -241,7 +249,7 @@ public class DubboDirectDriver implements RpcDriver {
     private String getApplicationName(CuratorFramework client, String serviceName) {
         return appNameCache.computeIfAbsent(serviceName, s -> {
             try {
-                String path = "/dubbo/" + s + "/providers";
+                String path = registryPath(s + "/providers");
                 if (client.checkExists().forPath(path) != null) {
                     List<String> children = client.getChildren().forPath(path);
                     if (children != null && !children.isEmpty()) {
@@ -268,8 +276,8 @@ public class DubboDirectDriver implements RpcDriver {
         }
 
         try {
-            if (client.checkExists().forPath("/dubbo") != null) {
-                List<String> children = client.getChildren().forPath("/dubbo");
+            if (client.checkExists().forPath(registryRoot) != null) {
+                List<String> children = client.getChildren().forPath(registryRoot);
                 String lowerKeyword = keyword != null ? keyword.toLowerCase(Locale.ROOT).trim() : "";
                 for (String serviceName : children) {
                     if (!serviceName.contains(".")) continue;
@@ -318,7 +326,7 @@ public class DubboDirectDriver implements RpcDriver {
         List<String> providerUrls = new ArrayList<>();
 
         try {
-            String providersPath = "/dubbo/" + interfaceName + "/providers";
+            String providersPath = registryPath(interfaceName + "/providers");
             if (client.checkExists().forPath(providersPath) != null) {
                 List<String> children = client.getChildren().forPath(providersPath);
                 for (String rawUrl : children) {

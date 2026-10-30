@@ -15,12 +15,16 @@ import java.util.concurrent.TimeUnit;
 public class DubboAdminDriver implements RpcDriver {
     private final String env, adminUrl;
     private final OkHttpClient httpClient;
+    private final int maxResponseBytes;
     private final AuthSessionManager sessions = AuthSessionManager.getInstance();
     private volatile String detectedPrefix;
 
     public DubboAdminDriver(String env) {
         this.env = env;
         ConfigManager config = ConfigManager.getInstance();
+        maxResponseBytes = config.getInt("env." + env + ".admin_max_response_bytes", 1024 * 1024);
+        if (maxResponseBytes <= 0 || maxResponseBytes > 16 * 1024 * 1024)
+            throw new IllegalArgumentException("admin_max_response_bytes must be between 1 and 16777216");
         String url = config.getProperty("env." + env + ".admin_url");
         if (url == null || HttpUrl.parse(url) == null) throw new IllegalArgumentException("Invalid admin_url for " + env);
         this.adminUrl = url.replaceAll("/+$", "");
@@ -58,8 +62,7 @@ public class DubboAdminDriver implements RpcDriver {
     @Override public String getType() { return "dubbo-admin"; }
 
     public void verifyCredential(String credential) throws Exception {
-        Object result = request("/services", null, credential);
-        extractServiceNames(result); // A successful HTML login page is not a successful login.
+        extractServiceNames(serviceList(credential)); // Same validation and endpoint fallback as discovery.
     }
 
     private String credential() throws Exception {
@@ -74,12 +77,11 @@ public class DubboAdminDriver implements RpcDriver {
                     .addPathSegment("login").addQueryParameter("userName", user).addQueryParameter("password", password)
                     .build().encodedPath() + "?" + new HttpUrl.Builder().scheme("http").host("localhost")
                     .addQueryParameter("userName", user).addQueryParameter("password", password).build().encodedQuery();
-            String prefix = detectedPrefix;
-            if (prefix == null) { detectPrefixFromPage(); prefix = detectedPrefix; }
+            String prefix = apiPrefix();
             Request req = new Request.Builder().url(adminUrl + prefix + "/api/dev" + query).get().build();
             try (Response resp = httpClient.newCall(req).execute()) {
                 if (!resp.isSuccessful() || resp.body() == null) throw new IOException("Dubbo Admin password login failed (HTTP " + resp.code() + ")");
-                String token = resp.body().string().trim();
+                String token = BoundedHttpBody.read(resp.body(), maxResponseBytes).trim();
                 if (token.startsWith("\"")) token = JSON.parseObject(token, String.class);
                 if (token.isEmpty() || token.startsWith("<") || token.startsWith("{")) throw new IOException("Unexpected password login response");
                 JSONObject cred = new JSONObject(); cred.put("authorization", token);
@@ -95,21 +97,28 @@ public class DubboAdminDriver implements RpcDriver {
         if (detectedPrefix != null) return;
         try (Response response = httpClient.newCall(new Request.Builder().url(adminUrl + "/").get().build()).execute()) {
             String location = response.header("Location");
-            String html = response.body() == null ? "" : response.body().string();
-            if ((location != null && location.contains("/dubbo-admin/")) || html.contains("/dubbo-admin/")) {
+            // A context redirect is useful evidence; SSO redirects and failed pages are not.
+            if (response.isRedirect() && location != null && location.contains("/dubbo-admin/")) {
                 detectedPrefix = "/dubbo-admin";
-            } else {
-                detectedPrefix = "";
+                return;
             }
-        } catch (Exception e) {
-            // Gracefully default to root context if prefix auto-detection fails
-            detectedPrefix = "";
+            if (!response.isSuccessful())
+                throw new IOException("Cannot detect Dubbo Admin API prefix (HTTP " + response.code() + "); retry or set admin_api_prefix");
+            String html = BoundedHttpBody.read(response.body(), maxResponseBytes);
+            if (html.trim().isEmpty()) throw new IOException("Cannot detect Dubbo Admin API prefix from an empty page; retry or set admin_api_prefix");
+            // Only cache positive context evidence. A plain root deployment is used for this request,
+            // but not cached, so a temporary login/error page cannot poison future discovery.
+            if (html.contains("/dubbo-admin/")) detectedPrefix = "/dubbo-admin";
         }
     }
 
-    private Object request(String path, JSONObject payload, String credential) throws Exception {
+    private String apiPrefix() throws IOException {
         if (detectedPrefix == null) detectPrefixFromPage();
-        Request.Builder builder = new Request.Builder().url(adminUrl + detectedPrefix + "/api/dev" + path);
+        return detectedPrefix == null ? "" : detectedPrefix;
+    }
+
+    private Object request(String path, JSONObject payload, String credential) throws Exception {
+        Request.Builder builder = new Request.Builder().url(adminUrl + apiPrefix() + "/api/dev" + path);
         if (payload == null) builder.get();
         else builder.post(RequestBody.create(MediaType.parse("application/json; charset=utf-8"), payload.toJSONString()));
         attachCredential(builder, credential);
@@ -118,8 +127,8 @@ public class DubboAdminDriver implements RpcDriver {
             if (code == 401 || code == 403 || (code >= 300 && code < 400))
                 throw new IllegalStateException("Dubbo Admin authentication failed (HTTP " + code + ") for " + env
                         + "; log in again with cookie AND localStorage token. Run dubbo-mcp login --env=" + env + " --clipboard");
-            if (!response.isSuccessful()) throw new IOException("Dubbo Admin API returned HTTP " + code + " for " + path.split("\\?")[0]);
-            String body = response.body() == null ? "" : response.body().string().trim();
+            if (!response.isSuccessful()) throw new AdminHttpException(code, path.split("\\?")[0]);
+            String body = BoundedHttpBody.read(response.body(), maxResponseBytes).trim();
             if (body.startsWith("<") || body.isEmpty()) throw new IOException("Dubbo Admin returned HTML/empty response; check authentication and admin_api_prefix");
             try { return JSON.parse(body); }
             catch (Exception e) { throw new IOException("Dubbo Admin returned invalid JSON"); }
@@ -139,16 +148,54 @@ public class DubboAdminDriver implements RpcDriver {
         else builder.header("Cookie", value);
     }
 
+    private static final class AdminHttpException extends IOException {
+        final int status;
+        AdminHttpException(int status, String path) {
+            super("Dubbo Admin API returned HTTP " + status + " for " + path);
+            this.status = status;
+        }
+        boolean unsupported() { return status == 404 || status == 405 || status == 501; }
+    }
+
+    private JSONArray serviceList(String cred) throws Exception {
+        try { return readServicePages("/services", cred); }
+        catch (AdminHttpException e) {
+            if (!e.unsupported()) throw e;
+            return readServicePages("/service?pattern=service&filter=*", cred);
+        }
+    }
+
+    private JSONArray readServicePages(String path, String cred) throws Exception {
+        JSONArray combined = new JSONArray();
+        String nextPath = path;
+        String expectedParameter = null;
+        Integer expectedIndex = null;
+        for (int page = 0; page < 100; page++) {
+            Object response;
+            try { response = request(nextPath, null, cred); }
+            catch (AdminHttpException e) {
+                if (page > 0) throw new IOException("Incomplete Dubbo Admin service discovery: subsequent page returned HTTP " + e.status);
+                throw e;
+            }
+            JSONArray rows = toServiceArray(response);
+            if (rows == null) throw new IllegalStateException("Unexpected Dubbo Admin services response (expected array or paged envelope)");
+            combined.addAll(rows);
+            ServicePage cursor = ServicePage.inspect(response, rows, combined.size());
+            if (expectedIndex != null && (!Objects.equals(expectedParameter, cursor.parameter) || cursor.current != expectedIndex))
+                throw ServicePage.incomplete("server did not honor the requested page");
+            if (!cursor.more) return combined;
+            expectedParameter = cursor.parameter;
+            expectedIndex = cursor.current + 1;
+            HttpUrl paged = HttpUrl.parse("http://localhost" + path).newBuilder()
+                    .setQueryParameter(cursor.parameter, String.valueOf(expectedIndex)).build();
+            nextPath = paged.encodedPath() + "?" + paged.encodedQuery();
+        }
+        throw ServicePage.incomplete("page limit exceeded");
+    }
+
     @Override public List<String> listServices(String keyword) {
         try {
-            Object resp;
-            try {
-                resp = request("/services", null, credential());
-            } catch (Exception e) {
-                // Fallback for Dubbo Admin deployments that do not expose /services, querying /service instead
-                resp = request("/service?pattern=service&filter=*", null, credential());
-            }
-            List<String> services = extractServiceNames(resp);
+            List<String> services = extractServiceNames(serviceList(credential()));
             String kw = keyword == null ? "" : keyword.toLowerCase(Locale.ROOT);
             services.removeIf(s -> !s.toLowerCase(Locale.ROOT).contains(kw));
             Collections.sort(services); return services;
@@ -249,29 +296,18 @@ public class DubboAdminDriver implements RpcDriver {
         if (group == null) group = cfg.getProperty("env." + env + ".group");
 
         Set<String> keys = new TreeSet<>();
-        // 1. Search via /service?pattern=service&filter=*iface*
+        HttpUrl query = new HttpUrl.Builder().scheme("http").host("localhost").addPathSegment("service")
+                .addQueryParameter("pattern", "service").addQueryParameter("filter", "*" + iface + "*").build();
         try {
-            HttpUrl query = new HttpUrl.Builder().scheme("http").host("localhost").addPathSegment("service")
-                    .addQueryParameter("pattern", "service").addQueryParameter("filter", "*" + iface + "*").build();
-            Object response = request(query.encodedPath() + "?" + query.encodedQuery(), null, cred);
-            JSONArray rows = toServiceArray(response);
-            if (rows != null) {
-                collectMatchingKeys(rows, iface, version, group, keys);
-            }
-        } catch (Exception ignored) {
-            // Service search endpoint may not be supported or returned an error; continue to fallback
+            collectMatchingKeys(readServicePages(query.encodedPath() + "?" + query.encodedQuery(), cred), iface, version, group, keys);
+        } catch (AdminHttpException e) {
+            if (!e.unsupported()) throw e;
+            collectMatchingKeys(readServicePages("/services", cred), iface, version, group, keys);
         }
-
-        // 2. Fallback: If no service found via /service query, inspect /services list
+        // A successful empty search can still be cross-checked against the all-services endpoint.
         if (keys.isEmpty()) {
-            try {
-                Object allServicesResp = request("/services", null, cred);
-                JSONArray allServices = toServiceArray(allServicesResp);
-                if (allServices != null) {
-                    collectMatchingKeys(allServices, iface, version, group, keys);
-                }
-            } catch (Exception ignored) {
-            }
+            try { collectMatchingKeys(readServicePages("/services", cred), iface, version, group, keys); }
+            catch (AdminHttpException e) { if (!e.unsupported()) throw e; }
         }
 
         // 3. Fallback: If still not found, but caller provided an explicit version or group, synthesize the key directly
@@ -385,8 +421,14 @@ public class DubboAdminDriver implements RpcDriver {
         }
         String cred = credential(), key = serviceKey(iface, version, group, cred);
         Object[] values = args == null ? new Object[0] : args.clone();
-        JSONObject detail = (JSONObject) request(detailPath(key), null, cred);
-        JSONObject metadata = extractMetadata(detail);
+        boolean explicitTypes = types != null && types.length == values.length;
+        if (explicitTypes) for (String type : types) if (type == null || type.trim().isEmpty()) explicitTypes = false;
+        JSONObject metadata = null;
+        if (!explicitTypes) {
+            Object detail = request(detailPath(key), null, cred);
+            if (!(detail instanceof JSONObject)) throw new IllegalStateException("Unexpected service detail response");
+            metadata = extractMetadata((JSONObject) detail);
+        }
         types = MethodSignatures.resolve(metadata == null ? null : metadata.getJSONArray("methods"), method, types, values.length);
         for (int i = 0; i < values.length; i++) {
             if (types != null && i < types.length) {

@@ -3,6 +3,14 @@ package com.mcp.dubbo.config;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.InputStream;
+import java.io.Reader;
+import java.io.InputStreamReader;
+import java.io.PushbackReader;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.charset.CodingErrorAction;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.Properties;
 
 /**
@@ -19,9 +27,9 @@ public class ConfigManager {
     private final Properties properties = new Properties();
     private static volatile ConfigManager instance;
 
-    private ConfigManager() {
-        loadConfig();
-    }
+    private ConfigManager() { this(Paths.get(USER_CONFIG_PATH)); }
+
+    ConfigManager(Path userConfig) { loadConfig(userConfig.toFile()); }
 
     public static ConfigManager getInstance() {
         if (instance == null) {
@@ -34,27 +42,35 @@ public class ConfigManager {
         return instance;
     }
 
-    private void loadConfig() {
+    private void loadConfig(File userFile) {
         // 1. Load from classpath first
         try (InputStream in = getClass().getClassLoader().getResourceAsStream(DEFAULT_CONFIG_RESOURCE)) {
-            if (in != null) {
-                properties.load(in);
-            }
+            if (in == null) throw new IOException("Bundled configuration is missing");
+            try (Reader reader = utf8Reader(in)) { properties.load(reader); }
         } catch (Exception e) {
-            System.err.println("[ConfigManager] Failed to load default classpath config: " + e.getMessage());
+            throw new IllegalStateException("Cannot load bundled configuration; startup aborted", e);
         }
 
         // 2. Override with ~/.dubbo-mcp/config.properties if present
-        File userFile = new File(USER_CONFIG_PATH);
-        if (userFile.exists() && userFile.isFile()) {
+        if (userFile.exists()) {
+            if (!userFile.isFile()) throw new IllegalStateException("User configuration is not a regular file: " + userFile);
             try (InputStream in = new FileInputStream(userFile)) {
                 Properties userProps = new Properties();
-                userProps.load(in);
+                try (Reader reader = utf8Reader(in)) { userProps.load(reader); }
                 properties.putAll(userProps);
             } catch (Exception e) {
-                System.err.println("[ConfigManager] Failed to load user config file from " + USER_CONFIG_PATH + ": " + e.getMessage());
+                throw new IllegalStateException("Cannot read user configuration at " + userFile + "; startup aborted", e);
             }
         }
+    }
+
+    private static Reader utf8Reader(InputStream input) throws IOException {
+        PushbackReader reader = new PushbackReader(new InputStreamReader(input,
+                StandardCharsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT)
+                        .onUnmappableCharacter(CodingErrorAction.REPORT)), 1);
+        int first = reader.read();
+        if (first != -1 && first != 0xFEFF) reader.unread(first);
+        return reader;
     }
 
     public String getProperty(String key) {
@@ -79,15 +95,17 @@ public class ConfigManager {
     }
 
     public boolean getBoolean(String key, boolean defaultValue) {
-        String val = properties.getProperty(key);
+        String val = getProperty(key);
         if (val == null) {
             return defaultValue;
         }
-        return "true".equalsIgnoreCase(val.trim());
+        if ("true".equalsIgnoreCase(val)) return true;
+        if ("false".equalsIgnoreCase(val)) return false;
+        throw new IllegalArgumentException("Invalid boolean configuration for " + key + "; expected true or false");
     }
 
     public int getInt(String key, int defaultValue) {
-        String val = properties.getProperty(key);
+        String val = getProperty(key);
         if (val == null) {
             return defaultValue;
         }

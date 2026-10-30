@@ -15,37 +15,28 @@ import java.nio.charset.StandardCharsets;
  */
 public class AgentAutoInstaller {
 
-    public static void installAll() {
-        System.err.println("\n🚀 [Dubbo-MCP] 正在自动检测并配置本机的 AI Coding Agents...\n");
+    private enum Result { CONFIGURED, SKIPPED, FAILED }
 
+    public static boolean installAll() {
+        System.err.println("Installing Dubbo-MCP client configurations...");
         String jarPath = resolveJarPath();
-        boolean anyConfigured = false;
-
-        // 1. Configure Codex CLI / Desktop (~/.codex/config.toml)
-        if (configureCodex(jarPath)) {
-            anyConfigured = true;
+        Result[] results = {configureCodex(jarPath), configureClaudeDesktop(jarPath), configureCursor(jarPath)};
+        int configured = 0, skipped = 0, failed = 0;
+        for (Result result : results) {
+            if (result == Result.CONFIGURED) configured++;
+            else if (result == Result.SKIPPED) skipped++;
+            else failed++;
         }
-
-        // 2. Configure Claude Desktop (claude_desktop_config.json)
-        if (configureClaudeDesktop(jarPath)) {
-            anyConfigured = true;
+        System.err.println("MCP configuration summary: configured=" + configured + ", skipped=" + skipped + ", failed=" + failed);
+        if (failed > 0) {
+            System.err.println("MCP configuration failed; resolve the errors above and rerun install.");
+            return false;
         }
-
-        // 3. Configure Cursor (~/.cursor/mcp.json)
-        if (configureCursor(jarPath)) {
-            anyConfigured = true;
-        }
-
-        System.err.println("\n==================================================================");
-        if (anyConfigured) {
-            System.err.println("🎉 [Dubbo-MCP] 配置完成！请重启您的 AI 编程工具即可开始使用。");
-        } else {
-            System.err.println("ℹ️ 未检测到运行中的 AI 工具配置文件。已为您默认生成 Codex 与 Cursor 配置。");
-        }
-        System.err.println("==================================================================\n");
+        System.err.println("MCP configuration complete. Restart your client to load the configuration.");
+        return true;
     }
 
-    private static boolean configureCodex(String jarPath) {
+    private static Result configureCodex(String jarPath) {
         String codexPath = System.getProperty("user.home") + "/.codex/config.toml";
         try {
             File configFile = new File(codexPath);
@@ -58,14 +49,14 @@ public class AgentAutoInstaller {
             String updated = CodexTomlInstaller.configure(existing, jarPath);
             if (!updated.equals(existing)) writeFile(configFile, updated);
             System.err.println("✅ Codex: 成功配置 " + codexPath);
-            return true;
+            return Result.CONFIGURED;
         } catch (Exception e) {
             System.err.println("⚠️ Codex 配置跳过: " + e.getMessage());
-            return false;
+            return Result.FAILED;
         }
     }
 
-    private static boolean configureClaudeDesktop(String jarPath) {
+    private static Result configureClaudeDesktop(String jarPath) {
         String os = System.getProperty("os.name").toLowerCase();
         String configPath;
         if (os.contains("mac")) {
@@ -79,7 +70,7 @@ public class AgentAutoInstaller {
         File configFile = new File(configPath);
         // Only configure Claude Desktop if the Claude directory exists or file exists
         if (!configFile.getParentFile().exists() && !configFile.exists()) {
-            return false;
+            return Result.SKIPPED;
         }
 
         try {
@@ -99,7 +90,7 @@ public class AgentAutoInstaller {
 
             if (mcpServers.containsKey("dubbo")) {
                 System.err.println("Existing dubbo MCP entry preserved: " + configPathFor(configFile));
-                return true;
+                return Result.CONFIGURED;
             }
             JSONObject dubboServer = new JSONObject();
             dubboServer.put("command", "java");
@@ -108,14 +99,14 @@ public class AgentAutoInstaller {
 
             writeFile(configFile, root.toString(com.alibaba.fastjson2.JSONWriter.Feature.PrettyFormat));
             System.err.println("✅ Claude Desktop: 成功配置 " + configPath);
-            return true;
+            return Result.CONFIGURED;
         } catch (Exception e) {
             System.err.println("⚠️ Claude Desktop 配置跳过: " + e.getMessage());
-            return false;
+            return Result.FAILED;
         }
     }
 
-    private static boolean configureCursor(String jarPath) {
+    private static Result configureCursor(String jarPath) {
         String cursorPath = System.getProperty("user.home") + "/.cursor/mcp.json";
         try {
             File configFile = new File(cursorPath);
@@ -139,7 +130,7 @@ public class AgentAutoInstaller {
 
             if (mcpServers.containsKey("dubbo")) {
                 System.err.println("Existing dubbo MCP entry preserved: " + configPathFor(configFile));
-                return true;
+                return Result.CONFIGURED;
             }
             JSONObject dubboServer = new JSONObject();
             dubboServer.put("command", "java");
@@ -148,10 +139,10 @@ public class AgentAutoInstaller {
 
             writeFile(configFile, root.toString(com.alibaba.fastjson2.JSONWriter.Feature.PrettyFormat));
             System.err.println("✅ Cursor: 成功配置 " + cursorPath);
-            return true;
+            return Result.CONFIGURED;
         } catch (Exception e) {
             System.err.println("⚠️ Cursor 配置跳过: " + e.getMessage());
-            return false;
+            return Result.FAILED;
         }
     }
 

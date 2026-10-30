@@ -221,12 +221,12 @@ args = []
 
 为解决大模型在生产级企业微服务调用中的真实痛点，内置五大高阶保护机制：
 1. **应用名双轨检索**：用户输入“查 oms 的订单”时，即使接口名为 `cn.wangoon.trade.OrderRpcService`，也能通过服务端 application 属性匹配并展示 `cn.wangoon.trade.OrderRpcService (app: oms-provider)`；
-2. **雪花 ID 精度防丢失与类型强转**：支持将 18~19 位超长数值单号以字符串形式传入（避免 JavaScript 53 位浮点数溢出截断），底层自动强转为 Java `Long`/`BigDecimal`；
+2. **雪花 ID 精度防丢失与类型强转**：支持将 18~19 位超长数值单号以字符串形式传入（避免 JavaScript 53 位浮点数溢出截断），底层自动强转为 Java `Long`/`BigDecimal`；转为 `int`/`long` 时，在调用前拒绝小数、非有限数及越界数值；
 3. **隐式参数透传（`RpcContext` Attachments）**：支持在请求中或配置文件（`env.<env>.attachment.<key>`）中注入租户号 `tenantId`、链路追踪 `traceId` 及灰度标；
-4. **大 JSON 上下文防打爆与 JSONPath**：返回报文超过 24KB 时自动进行结构化安全缩略，保留关键信封与字段，并支持通过 `jsonPath`（如 `$.data.items[0]`）进行精准投影；
+4. **大 JSON 上下文防打爆与 JSONPath**：返回报文超过 24KB 的 UTF-8 字节数时自动进行结构化安全缩略，并支持通过 `jsonPath`（如 `$.data.items[0]`）进行精准投影。JSONPath 在 RPC 执行前校验；`mcp.max_response_bytes` 可设置字节上限，无法容纳最小缩略信封的配置会在调用前报错；
 5. **弱元数据集群反射自愈**：集群未开启元数据中心时，通过解析 Dubbo 服务端反馈的 `Available methods: [...]` 错误提示，指导大模型在下一轮对话中自动修正方法签名自愈调用；
-6. **只读方法校验**：开启 `readonly=true` 的环境拦截非只读操作（如 `update*`、`delete*`）；
-7. **敏感数据脱敏**：开启 `data_masking=true` 自动对手机号与身份证进行掩码脱敏。
+6. **只读方法校验**：开启 `readonly=true` 的环境拦截非只读操作（如 `update*`、`delete*`）；布尔配置只接受 `true`/`false`，非法值会阻止调用；
+7. **敏感数据脱敏**：开启 `data_masking=true` 自动对手机号与身份证进行掩码脱敏，工具异常消息也会脱敏。
 
 ---
 
@@ -354,3 +354,27 @@ LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 mvn test
 # 打包可执行 Fat-JAR
 LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 mvn package -DskipTests
 ```
+
+### 服务发现与安装失败处理
+
+Admin 服务发现会读取已识别格式的后续页（Spring `page`、MyBatis `current`、PageHelper `pageNum`、`currPage`），最多读取 100 页。分页不完整、游标重复或无法确认完整性时返回错误，不使用部分候选自动选路。认证、网络和服务端异常保留原始原因，仅在 HTTP 404/405/501 时回退到另一服务列表接口；登录验证采用相同回退规则。完整显式 `paramTypes` 的调用无需查询元数据。
+
+`dubbo-mcp install` 区分配置成功、可选客户端未安装和配置失败；任一客户端配置写入失败（含部分成功）均返回非零退出码。
+
+### 启动错误与协议响应
+
+已有用户配置无法读取或解析时会终止启动，避免静默切换到默认环境；未创建用户配置时仍使用内置默认值。
+
+工具调用串行执行，最多排队 16 项，保留环境切换顺序；`ping` 等协议控制消息可独立响应。`mcp.request_timeout_ms` 限制已接收工具请求的总等待时间（含排队，默认 60000 毫秒），队列满时明确报错且不执行该请求。支持 [MCP 取消通知](https://modelcontextprotocol.io/specification/2025-06-18/basic/utilities/cancellation)：取消排队任务并中断运行任务，不发送已取消请求的结果。超时或取消无法保证远端写操作回滚，不应自动重试写操作。stdin 关闭后最多等待 `mcp.shutdown_timeout_ms`（默认 5000 毫秒），随后取消剩余任务。
+
+POSIX 安装器会创建缺失的 Shell 启动文件，并幂等写入 PATH。可运行 `python3 scripts/smoke_install.py` 验证首次安装场景。
+
+STDIO 单帧按 UTF-8 字节限制长度，`mcp.max_request_bytes` 默认 1 MiB，允许配置 1 字节至 8 MiB。超限帧会丢弃到下一个换行边界，并返回 ID 为 null 的错误；后续消息仍可处理。`python3 scripts/smoke_limits.py target/dubbo-mcp.jar` 会在独立 24 MiB 堆 JVM 中验证恢复。
+
+配置文件采用严格 UTF-8，支持可选 BOM 和 Java `\uXXXX` 转义；编码无效时终止启动。Admin 上下文探测失败不会缓存，下次请求可以在临时故障恢复后重新探测；也可用 `admin_api_prefix` 显式指定根路径或自定义部署。
+
+Admin HTTP 响应在解码、解析前按 `env.<env>.admin_max_response_bytes` 限制读取量，默认 1 MiB，允许调整到最多 16 MiB。上限覆盖 gzip 解压后的字节、分块响应、已知长度响应，以及登录和上下文探测。超限返回明确错误，可减少远端分页大小或调整该上限。
+
+ZooKeeper 服务发现遵循注册中心 URL 的 `group` 命名空间，例如 `zookeeper://127.0.0.1:2181?group=team-a`；它与选择 RPC 服务组（如 `blue`）的 `env.<env>.group` 配置独立。
+
+Windows 安装优先选择 `target/dubbo-mcp.jar`，兼容旧 `1.0.0-SNAPSHOT` fat JAR，不安装带版本号的 Maven thin JAR。Windows CI 通过 `scripts/smoke_install.ps1` 检查产物选择、离线模拟下载回退及校验失败时保留旧 JAR。
