@@ -131,8 +131,9 @@ public class TwoStageToolRegistry {
                     throw new IllegalArgumentException("interfaceName and method are required");
                 }
 
-                String[] paramTypes = parseStringArray(arguments.get("paramTypes"));
+                String[] rawParamTypes = parseStringArray(arguments.get("paramTypes"));
                 Object[] args = parseObjectArray(arguments.get("args"));
+                String[] paramTypes = normalizeParamTypes(rawParamTypes, args);
 
                 Object result = profileRouter.invoke(env, iface.trim(), method.trim(), paramTypes, args);
                 JSONObject wrapper = new JSONObject();
@@ -163,6 +164,37 @@ public class TwoStageToolRegistry {
             default:
                 throw new UnsupportedOperationException("Unknown tool: " + toolName);
         }
+    }
+
+    private String[] normalizeParamTypes(String[] paramTypes, Object[] args) {
+        if (args == null || args.length == 0) {
+            return new String[0];
+        }
+        if (paramTypes != null && paramTypes.length == args.length) {
+            return paramTypes;
+        }
+        String[] inferred = new String[args.length];
+        for (int i = 0; i < args.length; i++) {
+            if (paramTypes != null && i < paramTypes.length && paramTypes[i] != null && !paramTypes[i].trim().isEmpty()) {
+                inferred[i] = paramTypes[i].trim();
+            } else {
+                inferred[i] = inferJavaType(args[i]);
+            }
+        }
+        return inferred;
+    }
+
+    private String inferJavaType(Object arg) {
+        if (arg == null) return "java.lang.Object";
+        if (arg instanceof String) return "java.lang.String";
+        if (arg instanceof Long) return "java.lang.Long";
+        if (arg instanceof Integer) return "java.lang.Integer";
+        if (arg instanceof Boolean) return "java.lang.Boolean";
+        if (arg instanceof Double) return "java.lang.Double";
+        if (arg instanceof Float) return "java.lang.Float";
+        if (arg instanceof Map) return "java.util.Map";
+        if (arg instanceof List) return "java.util.List";
+        return arg.getClass().getName();
     }
 
     private String[] parseStringArray(Object obj) {

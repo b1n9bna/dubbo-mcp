@@ -25,6 +25,13 @@ public class CodexTomlInstaller {
             String jarPath = new File(CodexTomlInstaller.class.getProtectionDomain()
                     .getCodeSource().getLocation().toURI()).getAbsolutePath();
 
+            if (!jarPath.endsWith(".jar")) {
+                File candidate = new File("target/dubbo-mcp-1.0.0-SNAPSHOT.jar");
+                if (candidate.exists()) {
+                    jarPath = candidate.getAbsolutePath();
+                }
+            }
+
             String existingContent = "";
             if (configFile.exists()) {
                 try (FileInputStream fis = new FileInputStream(configFile)) {

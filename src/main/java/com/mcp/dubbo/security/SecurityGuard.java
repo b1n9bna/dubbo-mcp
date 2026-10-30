@@ -15,6 +15,10 @@ public class SecurityGuard {
     private static final Pattern ID_CARD_PATTERN = Pattern.compile("(?<!\\d)([1-9]\\d{5})\\d{8}(\\w{4})(?!\\d)");
 
     public static void checkSafety(String env, String interfaceName, String method) throws SecurityException {
+        if (method == null || method.trim().isEmpty()) {
+            throw new SecurityException("⚠️ [SecurityBlocked] Method name cannot be null or empty.");
+        }
+
         ConfigManager config = ConfigManager.getInstance();
         boolean isReadOnly = config.getBoolean("env." + env + ".readonly", false);
 
@@ -23,7 +27,7 @@ public class SecurityGuard {
                     "^(get|query|find|select|list|count|check|is|search|fetch|read).*$");
             Pattern allowedPattern = Pattern.compile(regex, Pattern.CASE_INSENSITIVE);
 
-            if (!allowedPattern.matcher(method).matches()) {
+            if (!allowedPattern.matcher(method.trim()).matches()) {
                 throw new SecurityException(String.format(
                         "⚠️ [SecurityBlocked] Operation '%s.%s' is blocked because environment '%s' is strictly READ-ONLY. " +
                         "Only read methods matching '%s' are permitted.",

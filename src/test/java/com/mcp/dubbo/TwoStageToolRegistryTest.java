@@ -51,6 +51,11 @@ public class TwoStageToolRegistryTest {
         SecurityGuard.checkSafety("prod", "com.corp.OrderService", "getOrderById");
     }
 
+    @Test(expected = SecurityException.class)
+    public void testSecurityGuardRejectsNullMethod() {
+        SecurityGuard.checkSafety("test", "com.corp.OrderService", null);
+    }
+
     @Test
     public void testSensitiveDataMasking() {
         String json = "{\"phone\":\"13812345678\",\"idCard\":\"110101199003072345\"}";

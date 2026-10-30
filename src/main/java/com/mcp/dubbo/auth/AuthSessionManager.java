@@ -45,6 +45,12 @@ public class AuthSessionManager {
     }
 
     public synchronized String getCredential(String env) {
+        // 0. Check config properties for static cookie (e.g. env.prod.admin_cookie)
+        String staticCookie = com.mcp.dubbo.config.ConfigManager.getInstance().getProperty("env." + env + ".admin_cookie");
+        if (staticCookie != null && !staticCookie.trim().isEmpty()) {
+            return staticCookie.trim();
+        }
+
         // 1. Check memory
         String cred = MEMORY_CACHE.get(env);
         if (cred != null && !cred.trim().isEmpty()) {

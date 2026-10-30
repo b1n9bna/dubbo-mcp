@@ -165,7 +165,57 @@ public class DubboAdminDriver implements RpcDriver {
     }
 
     private String ensureCredential() throws Exception {
+        String existing = sessionManager.getCredential(env);
+        if (existing != null && !existing.trim().isEmpty()) {
+            return existing;
+        }
+
+        // Try username/password auto-login if configured
+        ConfigManager cfg = ConfigManager.getInstance();
+        String username = cfg.getProperty("env." + env + ".admin_username");
+        String password = cfg.getProperty("env." + env + ".admin_password");
+        if (username != null && !username.trim().isEmpty() && password != null && !password.trim().isEmpty()) {
+            String loggedInCred = tryPasswordLogin(username.trim(), password.trim());
+            if (loggedInCred != null && !loggedInCred.trim().isEmpty()) {
+                sessionManager.saveCredential(env, loggedInCred);
+                return loggedInCred;
+            }
+        }
+
         return browserAuth.getValidCredential(env, adminUrl);
+    }
+
+    private String tryPasswordLogin(String username, String password) {
+        try {
+            JSONObject loginJson = new JSONObject();
+            loginJson.put("userName", username);
+            loginJson.put("password", password);
+            RequestBody body = RequestBody.create(
+                    MediaType.parse("application/json; charset=utf-8"),
+                    loginJson.toJSONString()
+            );
+            Request req = new Request.Builder()
+                    .url(adminUrl + "/api/dev/login")
+                    .post(body)
+                    .build();
+            try (Response resp = httpClient.newCall(req).execute()) {
+                if (resp.isSuccessful()) {
+                    String setCookie = resp.header("Set-Cookie");
+                    String respStr = resp.body() != null ? resp.body().string() : "";
+                    JSONObject resObj = JSON.parseObject(respStr);
+                    String token = resObj != null ? resObj.getString("token") : null;
+                    if (token != null && !token.isEmpty()) {
+                        return "Bearer " + token;
+                    }
+                    if (setCookie != null && !setCookie.isEmpty()) {
+                        return setCookie;
+                    }
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("[DubboAdminDriver] Auto-login with username/password failed: " + e.getMessage());
+        }
+        return null;
     }
 
     private void pingAdmin() {

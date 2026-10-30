@@ -41,9 +41,16 @@ public class LoopbackBrowserAuth implements AuthStrategy {
             return existing;
         }
 
-        // 2. Launch loopback HTTP server
+        // 2. Launch loopback HTTP server (with port conflict fallback)
         int port = ConfigManager.getInstance().getInt("auth.callback.port", 20888);
-        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", port), 0);
+        HttpServer server;
+        try {
+            server = HttpServer.create(new InetSocketAddress("127.0.0.1", port), 0);
+        } catch (java.net.BindException e) {
+            // If default port is occupied, automatically bind to an ephemeral free port
+            server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+            port = server.getAddress().getPort();
+        }
 
         CountDownLatch latch = new CountDownLatch(1);
         AtomicReference<String> capturedCredential = new AtomicReference<>();

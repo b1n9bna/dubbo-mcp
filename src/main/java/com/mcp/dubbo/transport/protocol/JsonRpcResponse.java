@@ -18,14 +18,16 @@ public class JsonRpcResponse {
     }
 
     public static JsonRpcResponse successText(Object id, String text) {
-        // Standard MCP tool execution result format: {"content":[{"type":"text","text":"..."}]}
-        Map<String, Object> textBlock = Collections.singletonMap("type", "text");
-        List<Map<String, String>> content = Collections.singletonList(
-                Collections.singletonMap("type", "text")
-        );
-        Map<String, Object> result = Collections.singletonMap("content",
-                Collections.singletonList(new ContentItem("text", text))
-        );
+        return successText(id, text, false);
+    }
+
+    public static JsonRpcResponse successText(Object id, String text, boolean isError) {
+        // Standard MCP tool execution result format: {"content":[{"type":"text","text":"..."}], "isError": false}
+        Map<String, Object> result = new java.util.LinkedHashMap<>();
+        result.put("content", Collections.singletonList(new ContentItem("text", text)));
+        if (isError) {
+            result.put("isError", true);
+        }
         return success(id, result);
     }
 
