@@ -1,0 +1,11 @@
+{
+  "name": "dubbo-mcp",
+  "version": "1.0.0",
+  "description": "Enterprise Dubbo RPC bridge for AI coding agents",
+  "mcpServers": {
+    "dubbo": {
+      "command": "dubbo-mcp",
+      "args": []
+    }
+  }
+}

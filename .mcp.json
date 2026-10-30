@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "dubbo": {
+      "command": "dubbo-mcp",
+      "args": []
+    }
+  }
+}

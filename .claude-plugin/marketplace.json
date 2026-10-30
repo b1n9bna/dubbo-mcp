@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "dubbo-mcp-marketplace",
+  "version": "1.0.0",
+  "description": "Enterprise Dubbo RPC bridge for AI coding agents",
+  "owner": {
+    "name": "b1n9bna"
+  },
+  "plugins": [
+    {
+      "name": "dubbo-mcp",
+      "description": "Enterprise Dubbo RPC bridge for AI coding agents",
+      "category": "development",
+      "source": "./"
+    }
+  ]
+}
