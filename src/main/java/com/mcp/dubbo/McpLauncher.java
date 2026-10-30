@@ -14,7 +14,10 @@ public class McpLauncher {
         // Parse CLI arguments before initializing Stdio isolation
         if (args != null && args.length > 0) {
             for (String arg : args) {
-                if ("--install-codex".equalsIgnoreCase(arg)) {
+                if ("install".equalsIgnoreCase(arg) || "--install".equalsIgnoreCase(arg) || "-i".equalsIgnoreCase(arg)) {
+                    com.mcp.dubbo.installer.AgentAutoInstaller.installAll();
+                    return;
+                } else if ("--install-codex".equalsIgnoreCase(arg)) {
                     CodexTomlInstaller.install();
                     return;
                 } else if (arg.startsWith("--env=")) {
@@ -38,8 +41,8 @@ public class McpLauncher {
     private static void printHelp() {
         System.err.println("🧭 Dubbo-MCP: The Enterprise Dubbo RPC Bridge for AI Coding Agents");
         System.err.println("Usage:");
-        System.err.println("  java -jar dubbo-mcp.jar                  # Start MCP Stdio Server");
-        System.err.println("  java -jar dubbo-mcp.jar --install-codex  # Register into ~/.codex/config.toml");
-        System.err.println("  java -jar dubbo-mcp.jar --env=prod       # Start with default env=prod");
+        System.err.println("  dubbo-mcp                               # Start MCP Stdio Server");
+        System.err.println("  dubbo-mcp install                       # Auto-detect and wire up all AI agents (Codex, Cursor, Claude)");
+        System.err.println("  dubbo-mcp --env=prod                    # Start with default env=prod");
     }
 }

@@ -64,69 +64,48 @@
 
 ---
 
-## 📦 如何安装与构建
+## ⚡ 极速安装与配置（像 CodeGraph 一样简单）
 
-### 方式一：下载预编译可执行 Jar（最推荐，0 编译成本）
-直接从 GitHub Releases 下载最新的 `dubbo-mcp.jar`，放入本地目录（如 `~/.mcp/dubbo-mcp.jar`）。
+### 步骤 1：终端一行命令安装
 
-### 方式二：本地源码编译
-本项目基于标准 Maven 构建，要求 JDK 8 或更高版本：
+**macOS / Linux 用户：**
 ```bash
-git clone https://github.com/b1n9bna/dubbo-mcp.git
-cd dubbo-mcp
-mvn clean package -DskipTests
+curl -fsSL https://raw.githubusercontent.com/b1n9bna/dubbo-mcp/main/install.sh | sh
 ```
-编译成功后，在 `target/` 目录下即可获得打包好的单文件 Fat-JAR：`dubbo-mcp-1.0.0-SNAPSHOT.jar`。
+
+**Windows (PowerShell) 用户：**
+```powershell
+irm https://raw.githubusercontent.com/b1n9bna/dubbo-mcp/main/install.ps1 | iex
+```
+
+*脚本会自动完成以下动作：*
+1. 下载可执行核心至 `~/.dubbo-mcp/dubbo-mcp.jar`；
+2. 注册系统全局命令 `dubbo-mcp`（从此无需敲冗长的 `java -jar ...`）；
+3. **自动扫描并一键配置本机的全部 AI 助手**（Codex、Cursor、Claude Desktop）！
 
 ---
 
-## 🔌 客户端配置指南（如何接入你的 AI 工具）
+### 步骤 2：自动连接你的 AI 编程助手（一键多端生效）
 
-### 1. Codex 用户（Codex CLI / Codex Desktop）
-
-#### 🚀 一键自动配置（秒级完成）：
-直接在终端执行自带的安装指令：
+安装脚本会自动触发检测。如果你后续新安装了 AI 工具，随时只需敲一行：
 ```bash
-java -jar dubbo-mcp.jar --install-codex
-```
-程序会自动在你的 `~/.codex/config.toml` 中安全追加以下配置，开箱即用：
-
-```toml
-# --- Dubbo-MCP Server Configuration ---
-[mcp.servers.dubbo]
-command = "java"
-args = ["-jar", "/绝对路径/dubbo-mcp.jar"]
+dubbo-mcp install
 ```
 
----
+终端将自动探测并完成注入，完全无需手动翻找深层配置文件：
+```
+🚀 [Dubbo-MCP] 正在自动检测并配置本机的 AI Coding Agents...
 
-### 2. Cursor 用户
-在你的工程根目录新建或打开 `.cursor/mcp.json`，添加以下配置：
-```json
-{
-  "mcpServers": {
-    "dubbo": {
-      "command": "java",
-      "args": ["-jar", "/绝对路径/dubbo-mcp.jar"]
-    }
-  }
-}
+✅ Codex: 成功配置 ~/.codex/config.toml
+✅ Claude Desktop: 成功配置 ~/Library/Application Support/Claude/claude_desktop_config.json
+✅ Cursor: 成功配置 ~/.cursor/mcp.json
+
+==================================================================
+🎉 [Dubbo-MCP] 配置完成！请重启您的 AI 编程工具即可开始使用。
+==================================================================
 ```
 
----
-
-### 3. Claude Desktop 用户
-编辑你的 `claude_desktop_config.json`（macOS 位于 `~/Library/Application Support/Claude/claude_desktop_config.json`）：
-```json
-{
-  "mcpServers": {
-    "dubbo": {
-      "command": "java",
-      "args": ["-jar", "/绝对路径/dubbo-mcp.jar"]
-    }
-  }
-}
-```
+*(如果你更习惯源码构建，也可执行 `mvn clean package -DskipTests` 后使用 `target/dubbo-mcp-1.0.0-SNAPSHOT.jar install`)*
 
 ---
 
