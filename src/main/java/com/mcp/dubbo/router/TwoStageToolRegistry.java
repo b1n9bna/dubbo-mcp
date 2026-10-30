@@ -28,13 +28,13 @@ public class TwoStageToolRegistry {
         Map<String, Object> listServicesSchema = new LinkedHashMap<>();
         listServicesSchema.put("type", "object");
         Map<String, Object> listProps = new LinkedHashMap<>();
-        listProps.put("keyword", Collections.singletonMap("type", "string"));
-        listProps.put("env", Collections.singletonMap("type", "string"));
+        listProps.put("keyword", paramProp("string", "Keyword to filter Dubbo service interface names (e.g. 'order', 'user')"));
+        listProps.put("env", paramProp("string", "Target environment profile (test / uat / prod). Defaults to active env"));
         listServicesSchema.put("properties", listProps);
 
         registeredTools.add(new McpTool(
                 "dubbo_list_services",
-                "Search and list registered Dubbo RPC services by keyword (e.g. 'order', 'user', 'trade')",
+                "Search and list registered Dubbo RPC services by keyword. Use this tool to discover available microservice interfaces in the cluster.",
                 listServicesSchema
         ));
 
@@ -42,16 +42,16 @@ public class TwoStageToolRegistry {
         Map<String, Object> detailSchema = new LinkedHashMap<>();
         detailSchema.put("type", "object");
         Map<String, Object> detailProps = new LinkedHashMap<>();
-        detailProps.put("interfaceName", Collections.singletonMap("type", "string"));
-        detailProps.put("version", Collections.singletonMap("type", "string"));
-        detailProps.put("group", Collections.singletonMap("type", "string"));
-        detailProps.put("env", Collections.singletonMap("type", "string"));
+        detailProps.put("interfaceName", paramProp("string", "Fully qualified interface name (e.g. 'cn.corp.trade.OrderService') or service key"));
+        detailProps.put("version", paramProp("string", "Optional Dubbo service version (e.g. '1.0.0')"));
+        detailProps.put("group", paramProp("string", "Optional Dubbo service group"));
+        detailProps.put("env", paramProp("string", "Target environment profile (test / uat / prod)"));
         detailSchema.put("properties", detailProps);
         detailSchema.put("required", Collections.singletonList("interfaceName"));
 
         registeredTools.add(new McpTool(
                 "dubbo_get_service_detail",
-                "Retrieve available methods, signatures, and provider details for a Dubbo interface",
+                "Retrieve available methods, signatures, and parameter DTO structures for a Dubbo interface. Use this before invoking to inspect parameter schemas.",
                 detailSchema
         ));
 
@@ -59,21 +59,19 @@ public class TwoStageToolRegistry {
         Map<String, Object> invokeSchema = new LinkedHashMap<>();
         invokeSchema.put("type", "object");
         Map<String, Object> invokeProps = new LinkedHashMap<>();
-        invokeProps.put("interfaceName", Collections.singletonMap("type", "string"));
-        invokeProps.put("method", Collections.singletonMap("type", "string"));
-        Map<String, Object> typeArray = new LinkedHashMap<>();
-        typeArray.put("type", "array"); typeArray.put("items", Collections.singletonMap("type", "string"));
-        invokeProps.put("paramTypes", typeArray);
-        invokeProps.put("args", Collections.singletonMap("type", "array"));
-        invokeProps.put("version", Collections.singletonMap("type", "string"));
-        invokeProps.put("group", Collections.singletonMap("type", "string"));
-        invokeProps.put("env", Collections.singletonMap("type", "string"));
+        invokeProps.put("interfaceName", paramProp("string", "Target interface name (e.g. 'cn.corp.trade.OrderService')"));
+        invokeProps.put("method", paramProp("string", "Target method name to invoke"));
+        invokeProps.put("paramTypes", arrayProp("string", "Optional parameter types array (e.g. ['java.lang.String']). If omitted, auto-inferred from metadata."));
+        invokeProps.put("args", paramProp("array", "Arguments array matching method parameters (supports primitives and JSON objects)"));
+        invokeProps.put("version", paramProp("string", "Optional Dubbo service version"));
+        invokeProps.put("group", paramProp("string", "Optional Dubbo service group"));
+        invokeProps.put("env", paramProp("string", "Target environment profile (test / uat / prod)"));
         invokeSchema.put("properties", invokeProps);
         invokeSchema.put("required", Arrays.asList("interfaceName", "method"));
 
         registeredTools.add(new McpTool(
                 "dubbo_invoke",
-                "Invoke a Dubbo RPC service using generic invocation without any JAR dependencies. Returns result JSON.",
+                "Invoke a Dubbo RPC service using generic invocation without any JAR dependencies. Returns result JSON. Read-only checks are enforced in production.",
                 invokeSchema
         ));
 
@@ -83,21 +81,36 @@ public class TwoStageToolRegistry {
 
         registeredTools.add(new McpTool(
                 "dubbo_list_envs",
-                "List all configured enterprise environments (test, uat, prod) and show the currently active one",
+                "List all configured enterprise environments (test, uat, prod) and show the currently active one.",
                 emptySchema
         ));
 
         // 5. dubbo_switch_env
         Map<String, Object> switchSchema = new LinkedHashMap<>();
         switchSchema.put("type", "object");
-        switchSchema.put("properties", Collections.singletonMap("env", Collections.singletonMap("type", "string")));
+        switchSchema.put("properties", Collections.singletonMap("env", paramProp("string", "Environment name to switch to (e.g. 'test', 'uat', 'prod')")));
         switchSchema.put("required", Collections.singletonList("env"));
 
         registeredTools.add(new McpTool(
                 "dubbo_switch_env",
-                "Switch the active default environment (e.g. 'test', 'prod') for subsequent invocations",
+                "Switch the active default environment for subsequent invocations.",
                 switchSchema
         ));
+    }
+
+    private static Map<String, Object> paramProp(String type, String description) {
+        Map<String, Object> prop = new LinkedHashMap<>();
+        prop.put("type", type);
+        prop.put("description", description);
+        return prop;
+    }
+
+    private static Map<String, Object> arrayProp(String itemType, String description) {
+        Map<String, Object> prop = new LinkedHashMap<>();
+        prop.put("type", "array");
+        prop.put("items", Collections.singletonMap("type", itemType));
+        prop.put("description", description);
+        return prop;
     }
 
     public List<McpTool> getTools() {
