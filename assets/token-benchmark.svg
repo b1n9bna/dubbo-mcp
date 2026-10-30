@@ -11,7 +11,7 @@
       .val-text-dom { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace; font-size: 13px; font-weight: 700; fill: #cf222e; }
       .track-bg { fill: #f6f8fa; stroke: #eaeef2; }
       .pill-bg { fill: #f6f8fa; stroke: #d0d7de; }
-      .pill-text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif; font-size: 12px; font-weight: 500; fill: #424a53; }
+      .pill-text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif; font-size: 12px; font-weight: 500; fill: #424a53; text-anchor: middle; }
       .pill-val { font-weight: 700; fill: #1f2328; }
 
       @media (prefers-color-scheme: dark) {
@@ -64,7 +64,7 @@
     <text x="704" y="18" class="val-text-mcp">572 <tspan font-size="11" font-weight="500">(基准 · 1x)</tspan></text>
   </g>
 
-  <!-- Row 2: Vision Browser Agent -->
+  <!-- Row 2: 视觉浏览器 Agent -->
   <g transform="translate(32, 146)">
     <text x="0" y="14" class="row-label">视觉浏览器 Agent</text>
     <text x="0" y="30" class="row-desc">6 轮 1280×800 截图 · 历史复合累加</text>
@@ -76,7 +76,7 @@
     <text x="704" y="18" class="val-text-vision">33,465 <tspan font-size="11" font-weight="500">(58.5×)</tspan></text>
   </g>
 
-  <!-- Row 3: DOM Browser Agent -->
+  <!-- Row 3: DOM 浏览器 Agent -->
   <g transform="translate(32, 202)">
     <text x="0" y="14" class="row-label">DOM 浏览器 Agent</text>
     <text x="0" y="30" class="row-desc">5 轮 DOM 树循环 · 充斥 HTML/CSS 标签</text>
@@ -91,15 +91,21 @@
   <!-- Bottom Metric Pills -->
   <g transform="translate(32, 268)">
     <!-- Pill 1 -->
-    <rect x="0" y="0" width="258" height="42" rx="8" class="pill-bg" />
-    <text x="16" y="26" class="pill-text">⚡ 耗时：<tspan class="pill-val">&lt; 1s</tspan> vs ~35s</text>
+    <g transform="translate(0, 0)">
+      <rect x="0" y="0" width="260" height="42" rx="8" class="pill-bg" />
+      <text x="130" y="26" class="pill-text">⚡ 耗时：<tspan class="pill-val">&lt; 1s</tspan> vs ~35s</text>
+    </g>
 
     <!-- Pill 2 -->
-    <rect x="274" y="0" width="268" height="42" rx="8" class="pill-bg" />
-    <text x="16" y="26" class="pill-text">💰 单次成本：<tspan class="pill-val">~$0.001</tspan> vs ~$0.12</text>
+    <g transform="translate(278, 0)">
+      <rect x="0" y="0" width="260" height="42" rx="8" class="pill-bg" />
+      <text x="130" y="26" class="pill-text">💰 单次成本：<tspan class="pill-val">~$0.001</tspan> vs ~$0.12</text>
+    </g>
 
     <!-- Pill 3 -->
-    <rect x="558" y="0" width="258" height="42" rx="8" class="pill-bg" />
-    <text x="16" y="26" class="pill-text">🎯 交互轮数：<tspan class="pill-val">1 轮直达</tspan> vs 5~6 轮</text>
+    <g transform="translate(556, 0)">
+      <rect x="0" y="0" width="260" height="42" rx="8" class="pill-bg" />
+      <text x="130" y="26" class="pill-text">🎯 交互轮数：<tspan class="pill-val">1 轮直达</tspan> vs 5~6 轮</text>
+    </g>
   </g>
 </svg>
