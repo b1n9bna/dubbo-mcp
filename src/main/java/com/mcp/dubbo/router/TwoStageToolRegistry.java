@@ -102,6 +102,9 @@ public class TwoStageToolRegistry {
         Map<String, Object> prop = new LinkedHashMap<>();
         prop.put("type", type);
         prop.put("description", description);
+        if ("array".equals(type)) {
+            prop.put("items", Collections.emptyMap());
+        }
         return prop;
     }
 
@@ -206,6 +209,11 @@ public class TwoStageToolRegistry {
     private String[] parseStringArray(Object obj) {
         if (obj == null) return new String[0];
         if (obj instanceof String[]) return (String[]) obj;
+        if (obj instanceof String) {
+            String s = ((String) obj).trim();
+            if (s.isEmpty()) return new String[0];
+            return new String[]{ s };
+        }
         if (obj instanceof List) {
             List<?> list = (List<?>) obj;
             String[] arr = new String[list.size()];
@@ -225,6 +233,7 @@ public class TwoStageToolRegistry {
         if (obj instanceof List) {
             return ((List<?>) obj).toArray();
         }
-        throw new IllegalArgumentException("args must be an array");
+        // Graceful single argument wrapping if LLM passes single object/primitive instead of array
+        return new Object[]{ obj };
     }
 }

@@ -62,6 +62,14 @@ public class ConfigManager {
         if (val == null) {
             val = System.getProperty(key);
         }
+        if (val == null && key != null) {
+            // Environment variable fallback: active.env -> ACTIVE_ENV or DUBBO_MCP_ACTIVE_ENV
+            String envKey = key.replace('.', '_').replace('-', '_').toUpperCase(java.util.Locale.ROOT);
+            val = System.getenv(envKey);
+            if (val == null) {
+                val = System.getenv("DUBBO_MCP_" + envKey);
+            }
+        }
         return val != null ? val.trim() : null;
     }
 

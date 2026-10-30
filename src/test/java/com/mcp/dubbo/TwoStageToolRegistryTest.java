@@ -87,4 +87,32 @@ public class TwoStageToolRegistryTest {
         Assert.assertEquals("SUCCESS", obj.getString("status"));
         Assert.assertEquals("prod", obj.getString("activeEnv"));
     }
+
+    @Test
+    public void testArraySchemaAlwaysHasItemsProperty() {
+        TwoStageToolRegistry registry = new TwoStageToolRegistry();
+        for (McpTool tool : registry.getTools()) {
+            Map<String, Object> schema = tool.getInputSchema();
+            if (schema != null && schema.containsKey("properties")) {
+                @SuppressWarnings("unchecked")
+                Map<String, Map<String, Object>> props = (Map<String, Map<String, Object>>) schema.get("properties");
+                for (Map.Entry<String, Map<String, Object>> entry : props.entrySet()) {
+                    if ("array".equals(entry.getValue().get("type"))) {
+                        Assert.assertTrue("Property " + entry.getKey() + " must define items", entry.getValue().containsKey("items"));
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
+    public void testConfigManagerSystemPropertyFallback() {
+        System.setProperty("env.unittest.type", "dubbo-admin");
+        try {
+            Assert.assertEquals("dubbo-admin", com.mcp.dubbo.config.ConfigManager.getInstance().getProperty("env.unittest.type"));
+            Assert.assertTrue(com.mcp.dubbo.router.ProfileRouter.getInstance().getConfiguredEnvs().contains("unittest"));
+        } finally {
+            System.clearProperty("env.unittest.type");
+        }
+    }
 }

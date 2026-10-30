@@ -27,10 +27,33 @@ public class DubboAdminDriver implements RpcDriver {
         String prefix = config.getProperty("env." + env + ".admin_api_prefix");
         if (prefix != null) detectedPrefix = prefix.replaceAll("/+$", "");
         if (adminUrl.endsWith("/dubbo-admin")) detectedPrefix = "";
-        httpClient = new OkHttpClient.Builder().connectTimeout(10, TimeUnit.SECONDS)
+        boolean insecureSsl = config.getBoolean("env." + env + ".admin_insecure_ssl",
+                config.getBoolean("security.insecure_ssl", false));
+        OkHttpClient.Builder clientBuilder = new OkHttpClient.Builder().connectTimeout(10, TimeUnit.SECONDS)
                 .readTimeout(20, TimeUnit.SECONDS).callTimeout(30, TimeUnit.SECONDS)
                 .followRedirects(false).followSslRedirects(false)
-                .retryOnConnectionFailure(false).build();
+                .retryOnConnectionFailure(false);
+        if (insecureSsl) {
+            configureInsecureSsl(clientBuilder);
+        }
+        httpClient = clientBuilder.build();
+    }
+
+    private static void configureInsecureSsl(OkHttpClient.Builder builder) {
+        try {
+            javax.net.ssl.TrustManager[] trustAllCerts = new javax.net.ssl.TrustManager[]{
+                new javax.net.ssl.X509TrustManager() {
+                    public void checkClientTrusted(java.security.cert.X509Certificate[] chain, String authType) {}
+                    public void checkServerTrusted(java.security.cert.X509Certificate[] chain, String authType) {}
+                    public java.security.cert.X509Certificate[] getAcceptedIssuers() { return new java.security.cert.X509Certificate[0]; }
+                }
+            };
+            javax.net.ssl.SSLContext sslContext = javax.net.ssl.SSLContext.getInstance("TLS");
+            sslContext.init(null, trustAllCerts, new java.security.SecureRandom());
+            builder.sslSocketFactory(sslContext.getSocketFactory(), (javax.net.ssl.X509TrustManager) trustAllCerts[0]);
+            builder.hostnameVerifier((hostname, session) -> true);
+        } catch (Exception ignored) {
+        }
     }
     @Override public String getType() { return "dubbo-admin"; }
 
@@ -296,19 +319,21 @@ public class DubboAdminDriver implements RpcDriver {
             } catch (Exception ignored) {
             }
         }
-        if (detail.get("data") instanceof JSONObject) {
-            JSONObject dataObj = detail.getJSONObject("data");
-            if (dataObj.get("metadata") instanceof JSONObject) {
-                return dataObj.getJSONObject("metadata");
-            }
-            if (dataObj.get("metadata") instanceof String) {
-                try {
-                    return JSON.parseObject(dataObj.getString("metadata"));
-                } catch (Exception ignored) {
+        for (String wrapperKey : new String[]{"data", "result", "response"}) {
+            if (detail.get(wrapperKey) instanceof JSONObject) {
+                JSONObject dataObj = detail.getJSONObject(wrapperKey);
+                if (dataObj.get("metadata") instanceof JSONObject) {
+                    return dataObj.getJSONObject("metadata");
                 }
-            }
-            if (dataObj.containsKey("methods")) {
-                return dataObj;
+                if (dataObj.get("metadata") instanceof String) {
+                    try {
+                        return JSON.parseObject(dataObj.getString("metadata"));
+                    } catch (Exception ignored) {
+                    }
+                }
+                if (dataObj.containsKey("methods")) {
+                    return dataObj;
+                }
             }
         }
         return detail;
@@ -330,6 +355,14 @@ public class DubboAdminDriver implements RpcDriver {
         JSONObject detail = (JSONObject) request(detailPath(key), null, cred);
         JSONObject metadata = extractMetadata(detail);
         types = MethodSignatures.resolve(metadata == null ? null : metadata.getJSONArray("methods"), method, types, values.length);
+        for (int i = 0; i < values.length; i++) {
+            if (types != null && i < types.length && !"java.lang.String".equals(types[i]) && values[i] instanceof String) {
+                String str = ((String) values[i]).trim();
+                if (str.startsWith("{") || str.startsWith("[")) {
+                    try { values[i] = JSON.parse(str); } catch (Exception ignored) {}
+                }
+            }
+        }
         JSONObject payload = new JSONObject(); payload.put("service", key); payload.put("method", method);
         payload.put("parameterTypes", types); payload.put("params", values);
         // Never retry a test invocation: a timeout can occur after a mutation has completed.

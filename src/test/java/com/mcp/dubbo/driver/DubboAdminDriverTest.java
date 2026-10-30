@@ -129,4 +129,11 @@ public class DubboAdminDriverTest {
         Map<String, Object> detail = driver.getServiceMetadata("com.example.Service");
         Assert.assertEquals("blue/com.example.Service:1", detail.get("service"));
     }
+    @Test public void unpacksStringifiedDtoArgumentIntoMap() throws Exception {
+        Object result = driver.invoke("com.example.Service", "query", null, new Object[]{"{\"id\":123}"}, null, null);
+        Assert.assertTrue(((JSONObject)result).getBooleanValue("success"));
+        Object param = invocation.getJSONArray("params").get(0);
+        Assert.assertTrue("Parameter must be unpacked into a JSONObject", param instanceof JSONObject);
+        Assert.assertEquals(123, ((JSONObject) param).getIntValue("id"));
+    }
 }

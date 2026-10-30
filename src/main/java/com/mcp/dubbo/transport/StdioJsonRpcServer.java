@@ -70,7 +70,7 @@ public class StdioJsonRpcServer {
             case "initialize": {
                 Map<String, Object> serverInfo = new LinkedHashMap<>();
                 serverInfo.put("name", "dubbo-mcp");
-                serverInfo.put("version", "1.0.0");
+                serverInfo.put("version", "1.0.1");
 
                 Map<String, Object> capabilities = new LinkedHashMap<>();
                 capabilities.put("tools", Collections.emptyMap());
@@ -114,9 +114,16 @@ public class StdioJsonRpcServer {
                     String output = toolRegistry.executeTool(toolName, arguments);
                     return JsonRpcResponse.successText(id, output, false);
                 } catch (Exception e) {
+                    Throwable root = e;
+                    while (root.getCause() != null && root.getCause() != root) {
+                        root = root.getCause();
+                    }
                     String msg = e.getMessage() != null && !e.getMessage().trim().isEmpty()
                             ? e.getMessage()
-                            : (e.getClass().getSimpleName() + (e.getCause() != null ? ": " + e.getCause().getMessage() : ""));
+                            : e.getClass().getSimpleName();
+                    if (root != e && root.getMessage() != null && !root.getMessage().trim().isEmpty() && !msg.contains(root.getMessage())) {
+                        msg = msg + " (Root cause: " + root.getMessage() + ")";
+                    }
                     String errorMsg = "⚠️ [Dubbo-MCP Execution Error] " + msg;
                     return JsonRpcResponse.successText(id, errorMsg, true);
                 }

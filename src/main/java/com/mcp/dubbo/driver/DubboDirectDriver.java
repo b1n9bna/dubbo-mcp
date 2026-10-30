@@ -81,6 +81,14 @@ public class DubboDirectDriver implements RpcDriver {
         if (args == null) {
             args = new Object[0];
         }
+        for (int i = 0; i < args.length; i++) {
+            if (resolvedParamTypes != null && i < resolvedParamTypes.length && !"java.lang.String".equals(resolvedParamTypes[i]) && args[i] instanceof String) {
+                String str = ((String) args[i]).trim();
+                if (str.startsWith("{") || str.startsWith("[")) {
+                    try { args[i] = JSON.parse(str); } catch (Exception ignored) {}
+                }
+            }
+        }
         return genericService.$invoke(method, resolvedParamTypes, args);
     }
 
@@ -339,15 +347,23 @@ public class DubboDirectDriver implements RpcDriver {
         } else if (zkAddress.startsWith("zk://")) {
             zkAddress = zkAddress.substring("zk://".length());
         }
-        zkAddress = zkAddress.split("[/?]", 2)[0].trim();
+        String hostPort = zkAddress.split("[/?]", 2)[0].trim();
+        String connectString = hostPort;
+        if (raw.contains("backup=")) {
+            int idx = raw.indexOf("backup=");
+            String backupStr = raw.substring(idx + 7).split("&")[0].trim();
+            if (!backupStr.isEmpty()) {
+                connectString = connectString + "," + backupStr;
+            }
+        }
 
-        if (!zkAddress.isEmpty()) {
+        if (!connectString.isEmpty()) {
             try {
                 curatorClient = CuratorFrameworkFactory.builder()
-                        .connectString(zkAddress)
+                        .connectString(connectString)
                         .sessionTimeoutMs(timeout)
                         .connectionTimeoutMs(timeout)
-                        .retryPolicy(new RetryOneTime(100))
+                        .retryPolicy(new org.apache.curator.retry.ExponentialBackoffRetry(500, 3))
                         .build();
                 curatorClient.start();
                 int connectTimeout = Math.min(timeout, 10000);
@@ -356,7 +372,7 @@ public class DubboDirectDriver implements RpcDriver {
             } catch (Exception e) {
                 if (curatorClient != null) { curatorClient.close(); curatorClient = null; }
                 if (e instanceof InterruptedException) Thread.currentThread().interrupt();
-                throw new IllegalStateException("Cannot connect to ZooKeeper (" + zkAddress + ") for " + env, e);
+                throw new IllegalStateException("Cannot connect to ZooKeeper (" + connectString + ") for " + env, e);
             }
         }
         if (curatorClient == null) throw new IllegalStateException("Unsupported registry URL for " + env + ": " + registryUrl);

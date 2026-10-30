@@ -73,8 +73,17 @@ public class ProfileRouter {
 
     public String resolveEnv(String explicitEnv) {
         String env = explicitEnv == null || explicitEnv.trim().isEmpty() ? configManager.getActiveEnv() : explicitEnv.trim();
-        if (!env.matches("[A-Za-z0-9_-]+") || !getConfiguredEnvs().contains(env))
-            throw new IllegalArgumentException("Unknown environment: " + env);
+        if (!env.matches("[A-Za-z0-9_-]+")) {
+            throw new IllegalArgumentException("Invalid environment name: " + env);
+        }
+        if (!getConfiguredEnvs().contains(env)) {
+            // Check if any env.<name>.* property or environment variable exists
+            if (configManager.getProperty("env." + env + ".admin_url") == null &&
+                configManager.getProperty("env." + env + ".registry") == null &&
+                configManager.getProperty("env." + env + ".type") == null) {
+                throw new IllegalArgumentException("Unknown environment: " + env + "; configured environments are: " + getConfiguredEnvs());
+            }
+        }
         return env;
     }
 
@@ -98,6 +107,7 @@ public class ProfileRouter {
 
     public List<String> getConfiguredEnvs() {
         Set<String> envs = new LinkedHashSet<>();
+        // 1. From file / classpath properties
         Properties props = configManager.getRawProperties();
         for (String key : props.stringPropertyNames()) {
             if (key.startsWith("env.")) {
@@ -105,6 +115,26 @@ public class ProfileRouter {
                 int dot = sub.indexOf('.');
                 if (dot > 0) {
                     envs.add(sub.substring(0, dot));
+                }
+            }
+        }
+        // 2. From JVM system properties (-Denv.xxx.yyy)
+        Properties sysProps = System.getProperties();
+        for (String key : sysProps.stringPropertyNames()) {
+            if (key.startsWith("env.")) {
+                String sub = key.substring(4);
+                int dot = sub.indexOf('.');
+                if (dot > 0) {
+                    envs.add(sub.substring(0, dot));
+                }
+            }
+        }
+        // 3. From environment variables (ENV_XXX_YYY)
+        for (String envKey : System.getenv().keySet()) {
+            if (envKey.startsWith("ENV_")) {
+                String[] parts = envKey.split("_");
+                if (parts.length >= 3) {
+                    envs.add(parts[1].toLowerCase(java.util.Locale.ROOT));
                 }
             }
         }
