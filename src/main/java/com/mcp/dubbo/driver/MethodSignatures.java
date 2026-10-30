@@ -13,10 +13,24 @@ final class MethodSignatures {
             throw new IllegalArgumentException("paramTypes count must match args count");
         Map<String, String[]> matches = new LinkedHashMap<>();
         if (methods != null) for (int i = 0; i < methods.size(); i++) {
+            if (!(methods.get(i) instanceof JSONObject)) continue;
             JSONObject method = methods.getJSONObject(i);
+            if (method == null || !name.equals(method.getString("name"))) continue;
             JSONArray types = method.getJSONArray("parameterTypes");
-            if (!name.equals(method.getString("name")) || types == null || types.size() != count) continue;
-            String[] signature = types.toArray(new String[0]);
+            if (types == null || types.size() != count) continue;
+            String[] signature = new String[types.size()];
+            for (int j = 0; j < types.size(); j++) {
+                Object p = types.get(j);
+                if (p instanceof String) {
+                    signature[j] = (String) p;
+                } else if (p instanceof JSONObject && ((JSONObject) p).containsKey("type")) {
+                    signature[j] = ((JSONObject) p).getString("type");
+                } else if (p != null) {
+                    signature[j] = p.toString();
+                } else {
+                    signature[j] = "java.lang.Object";
+                }
+            }
             matches.put(Arrays.toString(signature), signature);
         }
         if (matches.size() == 1) return matches.values().iterator().next();

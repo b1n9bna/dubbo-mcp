@@ -11,4 +11,8 @@ public class MethodSignaturesTest {
     @Test(expected=IllegalArgumentException.class) public void multipleProviderIdentitiesAreRejected() { DubboDirectDriver.selectService(new HashSet<>(Arrays.asList("1\tblue","2\tblue")),"com.example.Service"); }
     @Test public void groupAndVersionAreSelectedTogether() { Assert.assertArrayEquals(new String[]{"1","blue"},DubboDirectDriver.selectService(Collections.singleton("1\tblue"),"com.example.Service")); }
     @Test public void defaultGroupIsPreferredWhenUnspecified() { Assert.assertArrayEquals(new String[]{"1.0.0",""}, DubboDirectDriver.selectService(new HashSet<>(Arrays.asList("1.0.0\t", "1.0.0\tJF")), "com.example.Service")); }
+    @Test public void resolveWithObjectTypeDescriptor() {
+        String[] types = MethodSignatures.resolve(JSON.parseArray("[{\"name\":\"query\",\"parameterTypes\":[{\"type\":\"java.lang.String\"}]}]"), "query", null, 1);
+        Assert.assertArrayEquals(new String[]{"java.lang.String"}, types);
+    }
 }

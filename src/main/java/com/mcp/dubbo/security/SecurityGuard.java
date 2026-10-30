@@ -41,8 +41,14 @@ public class SecurityGuard {
         if (jsonText == null || jsonText.isEmpty()) {
             return jsonText;
         }
-        Object parsed = com.alibaba.fastjson2.JSON.parse(jsonText);
-        return com.alibaba.fastjson2.JSON.toJSONString(maskValue(parsed));
+        try {
+            Object parsed = com.alibaba.fastjson2.JSON.parse(jsonText);
+            return com.alibaba.fastjson2.JSON.toJSONString(maskValue(parsed));
+        } catch (Exception e) {
+            // Safe fallback to direct regex masking if text is not valid JSON
+            String masked = PHONE_PATTERN.matcher(jsonText).replaceAll("$1****$2");
+            return ID_CARD_PATTERN.matcher(masked).replaceAll("$1********$2");
+        }
     }
     private static Object maskValue(Object value) {
         if (value instanceof String) {

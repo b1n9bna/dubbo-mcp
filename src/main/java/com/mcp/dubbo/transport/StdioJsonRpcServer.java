@@ -114,7 +114,10 @@ public class StdioJsonRpcServer {
                     String output = toolRegistry.executeTool(toolName, arguments);
                     return JsonRpcResponse.successText(id, output, false);
                 } catch (Exception e) {
-                    String errorMsg = "⚠️ [Dubbo-MCP Execution Error] " + e.getMessage();
+                    String msg = e.getMessage() != null && !e.getMessage().trim().isEmpty()
+                            ? e.getMessage()
+                            : (e.getClass().getSimpleName() + (e.getCause() != null ? ": " + e.getCause().getMessage() : ""));
+                    String errorMsg = "⚠️ [Dubbo-MCP Execution Error] " + msg;
                     return JsonRpcResponse.successText(id, errorMsg, true);
                 }
             }

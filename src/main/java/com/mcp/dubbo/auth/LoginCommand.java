@@ -23,7 +23,11 @@ public final class LoginCommand {
             else if (!"login".equals(a) && !"--login".equals(a)) throw new IllegalArgumentException("Unknown login option");
         }
         ConfigManager config = ConfigManager.getInstance();
-        if (!"dubbo-admin".equals(config.getProperty("env." + env + ".type")))
+        String type = config.getProperty("env." + env + ".type");
+        if (type == null && config.getProperty("env." + env + ".admin_url") != null) {
+            type = "dubbo-admin";
+        }
+        if (!"dubbo-admin".equalsIgnoreCase(type))
             throw new IllegalArgumentException("Login requires a configured dubbo-admin environment: " + env);
         if ((clipboard ? 1 : 0) + (stdin ? 1 : 0) + (file != null ? 1 : 0) > 1)
             throw new IllegalArgumentException("Choose only one of --clipboard, --stdin, --file");

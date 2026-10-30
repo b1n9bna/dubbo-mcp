@@ -68,4 +68,23 @@ public class TwoStageToolRegistryTest {
         Assert.assertEquals(13812345678L, com.alibaba.fastjson2.JSON.parseObject(result).getLongValue("id"));
         Assert.assertEquals("138****5678", com.alibaba.fastjson2.JSON.parseObject(result).getString("phone"));
     }
+
+    @Test
+    public void testMaskSensitiveDataNonJsonFallback() {
+        String nonJson = "Call customer at 13812345678, id: 110101199003072345";
+        String masked = SecurityGuard.maskSensitiveData(nonJson);
+        Assert.assertTrue(masked.contains("138****5678"));
+        Assert.assertTrue(masked.contains("110101********2345"));
+    }
+
+    @Test
+    public void testSwitchEnvReturnsValidJson() throws Exception {
+        TwoStageToolRegistry registry = new TwoStageToolRegistry();
+        Map<String, Object> args = new HashMap<>();
+        args.put("env", "prod");
+        String result = registry.executeTool("dubbo_switch_env", args);
+        com.alibaba.fastjson2.JSONObject obj = com.alibaba.fastjson2.JSON.parseObject(result);
+        Assert.assertEquals("SUCCESS", obj.getString("status"));
+        Assert.assertEquals("prod", obj.getString("activeEnv"));
+    }
 }

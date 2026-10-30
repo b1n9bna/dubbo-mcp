@@ -86,9 +86,13 @@ public class ProfileRouter {
         String checked = resolveEnv(env);
         return driverCache.computeIfAbsent(checked, e -> {
             String type = configManager.getProperty("env." + e + ".type");
+            if (type == null) {
+                if (configManager.getProperty("env." + e + ".admin_url") != null) type = "dubbo-admin";
+                else if (configManager.getProperty("env." + e + ".registry") != null) type = "zookeeper";
+            }
             if ("dubbo-admin".equalsIgnoreCase(type)) return new DubboAdminDriver(e);
             if ("zookeeper".equalsIgnoreCase(type)) return new DubboDirectDriver(e);
-            throw new IllegalArgumentException("Unsupported driver type: " + type);
+            throw new IllegalArgumentException("Unsupported driver type for " + e + ": " + type + " (set env." + e + ".type=dubbo-admin or zookeeper)");
         });
     }
 
@@ -96,9 +100,12 @@ public class ProfileRouter {
         Set<String> envs = new LinkedHashSet<>();
         Properties props = configManager.getRawProperties();
         for (String key : props.stringPropertyNames()) {
-            if (key.startsWith("env.") && key.endsWith(".type")) {
-                String envName = key.substring(4, key.indexOf(".type"));
-                envs.add(envName);
+            if (key.startsWith("env.")) {
+                String sub = key.substring(4);
+                int dot = sub.indexOf('.');
+                if (dot > 0) {
+                    envs.add(sub.substring(0, dot));
+                }
             }
         }
         return new ArrayList<>(envs);

@@ -71,9 +71,16 @@ public class DubboAdminDriver implements RpcDriver {
     private synchronized void detectPrefixFromPage() throws IOException {
         if (detectedPrefix != null) return;
         try (Response response = httpClient.newCall(new Request.Builder().url(adminUrl + "/").get().build()).execute()) {
+            String location = response.header("Location");
             String html = response.body() == null ? "" : response.body().string();
-            if (!response.isSuccessful()) throw new IOException("Cannot detect Admin context; set admin_api_prefix explicitly");
-            detectedPrefix = html.contains("/dubbo-admin/") ? "/dubbo-admin" : "";
+            if ((location != null && location.contains("/dubbo-admin/")) || html.contains("/dubbo-admin/")) {
+                detectedPrefix = "/dubbo-admin";
+            } else {
+                detectedPrefix = "";
+            }
+        } catch (Exception e) {
+            // Gracefully default to root context if prefix auto-detection fails
+            detectedPrefix = "";
         }
     }
 
@@ -125,6 +132,15 @@ public class DubboAdminDriver implements RpcDriver {
             if (obj.get("data") instanceof JSONArray) return obj.getJSONArray("data");
             if (obj.get("services") instanceof JSONArray) return obj.getJSONArray("services");
             if (obj.get("result") instanceof JSONArray) return obj.getJSONArray("result");
+            // If response is wrapped in standard API envelope: {"code":200, "data": {"content":[...]}}
+            if (obj.get("data") instanceof JSONObject) {
+                JSONArray nested = toServiceArray(obj.getJSONObject("data"));
+                if (nested != null) return nested;
+            }
+            if (obj.get("result") instanceof JSONObject) {
+                JSONArray nested = toServiceArray(obj.getJSONObject("result"));
+                if (nested != null) return nested;
+            }
         }
         return null;
     }
@@ -134,9 +150,19 @@ public class DubboAdminDriver implements RpcDriver {
         if (array == null) throw new IllegalStateException("Unexpected Dubbo Admin services response (expected array)");
         Set<String> names = new LinkedHashSet<>();
         for (Object item : array) {
-            String name = item instanceof String ? (String) item : item instanceof JSONObject ? ((JSONObject)item).getString("service") : null;
-            if (name == null) throw new IllegalStateException("Unexpected service entry in Dubbo Admin response");
-            names.add(name);
+            String name = null;
+            if (item instanceof String) {
+                name = (String) item;
+            } else if (item instanceof JSONObject) {
+                JSONObject obj = (JSONObject) item;
+                name = obj.getString("service");
+                if (name == null) name = obj.getString("serviceName");
+                if (name == null) name = obj.getString("name");
+                if (name == null) name = obj.getString("interface");
+            }
+            if (name != null && !name.trim().isEmpty()) {
+                names.add(name.trim());
+            }
         }
         return new ArrayList<>(names);
     }
@@ -157,11 +183,18 @@ public class DubboAdminDriver implements RpcDriver {
         if (rows == null) throw new IllegalStateException("Unexpected Dubbo Admin service search response");
         Set<String> keys = new TreeSet<>();
         for (Object item : rows) {
-            if (!(item instanceof JSONObject)) continue;
-            JSONObject row = (JSONObject)item;
-            String name = row.getString("service");
+            String name = null;
+            String rowGroup = null, rowVersion = null;
+            if (item instanceof JSONObject) {
+                JSONObject row = (JSONObject) item;
+                name = row.getString("service");
+                if (name == null) name = row.getString("serviceName");
+                rowGroup = row.getString("group");
+                rowVersion = row.getString("version");
+            } else if (item instanceof String) {
+                name = (String) item;
+            }
             if (name == null) continue;
-            String rowGroup = row.getString("group"), rowVersion = row.getString("version");
             int slash = name.indexOf('/'), colon = name.lastIndexOf(':');
             if (slash >= 0) { rowGroup = name.substring(0, slash); name = name.substring(slash + 1); }
             colon = name.lastIndexOf(':');
@@ -178,6 +211,22 @@ public class DubboAdminDriver implements RpcDriver {
         return new HttpUrl.Builder().scheme("http").host("localhost").addPathSegment("service")
                 .addPathSegment(key.replace('/', '*')).build().encodedPath();
     }
+    static JSONObject extractMetadata(JSONObject detail) {
+        if (detail == null) return null;
+        if (detail.containsKey("metadata") && detail.get("metadata") instanceof JSONObject) {
+            return detail.getJSONObject("metadata");
+        }
+        if (detail.containsKey("data") && detail.get("data") instanceof JSONObject) {
+            JSONObject dataObj = detail.getJSONObject("data");
+            if (dataObj.containsKey("metadata") && dataObj.get("metadata") instanceof JSONObject) {
+                return dataObj.getJSONObject("metadata");
+            }
+            if (dataObj.containsKey("methods")) {
+                return dataObj;
+            }
+        }
+        return detail;
+    }
     @Override public Map<String, Object> getServiceMetadata(String iface) { return getServiceMetadata(iface, null, null); }
     @Override public Map<String, Object> getServiceMetadata(String iface, String version, String group) {
         try {
@@ -193,7 +242,7 @@ public class DubboAdminDriver implements RpcDriver {
         String cred = credential(), key = serviceKey(iface, version, group, cred);
         Object[] values = args == null ? new Object[0] : args;
         JSONObject detail = (JSONObject) request(detailPath(key), null, cred);
-        JSONObject metadata = detail.getJSONObject("metadata");
+        JSONObject metadata = extractMetadata(detail);
         types = MethodSignatures.resolve(metadata == null ? null : metadata.getJSONArray("methods"), method, types, values.length);
         JSONObject payload = new JSONObject(); payload.put("service", key); payload.put("method", method);
         payload.put("parameterTypes", types); payload.put("params", values);

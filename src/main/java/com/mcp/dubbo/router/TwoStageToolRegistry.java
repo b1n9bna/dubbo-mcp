@@ -137,11 +137,12 @@ public class TwoStageToolRegistry {
                     throw new IllegalArgumentException("interfaceName and method are required");
                 }
 
-                String[] rawParamTypes = parseStringArray(arguments.get("paramTypes"));
+                boolean hasParamTypes = arguments.get("paramTypes") != null;
+                String[] rawParamTypes = hasParamTypes ? parseStringArray(arguments.get("paramTypes")) : null;
                 Object[] args = parseObjectArray(arguments.get("args"));
-                if (arguments.containsKey("paramTypes") && rawParamTypes.length != args.length)
-                    throw new IllegalArgumentException("paramTypes count must match args count");
-                String[] paramTypes = arguments.containsKey("paramTypes") ? rawParamTypes : null;
+                if (hasParamTypes && rawParamTypes.length != args.length)
+                    throw new IllegalArgumentException("paramTypes count (" + rawParamTypes.length + ") must match args count (" + args.length + ")");
+                String[] paramTypes = hasParamTypes ? rawParamTypes : null;
                 for (int i = 0; i < args.length; i++) {
                     // Legacy clients sometimes wrap DTO JSON in a string. Keep actual String parameters intact.
                     if (paramTypes != null && args[i] instanceof String && !"java.lang.String".equals(paramTypes[i])) {
@@ -178,7 +179,10 @@ public class TwoStageToolRegistry {
                     throw new IllegalArgumentException("env is required");
                 }
                 configManager.setActiveEnv(profileRouter.resolveEnv(targetEnv));
-                return "{\"status\":\"SUCCESS\",\"activeEnv\":\"" + targetEnv.trim() + "\"}";
+                JSONObject res = new JSONObject();
+                res.put("status", "SUCCESS");
+                res.put("activeEnv", targetEnv.trim());
+                return res.toJSONString();
             }
 
             default:

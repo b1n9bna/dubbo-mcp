@@ -47,7 +47,13 @@ public class DubboDirectDriver implements RpcDriver {
 
         this.applicationConfig = new ApplicationConfig("dubbo-mcp-client");
         this.applicationConfig.setQosEnable(false);
-        this.registryConfig = new RegistryConfig(registryUrl);
+        String normalizedUrl = registryUrl;
+        if (!normalizedUrl.contains("://")) {
+            normalizedUrl = "zookeeper://" + normalizedUrl;
+        } else if (normalizedUrl.startsWith("zk://")) {
+            normalizedUrl = "zookeeper://" + normalizedUrl.substring("zk://".length());
+        }
+        this.registryConfig = new RegistryConfig(normalizedUrl);
         this.registryConfig.setRegister(false);
         Runtime.getRuntime().addShutdownHook(new Thread(this::close, "dubbo-mcp-close-" + env));
     }
@@ -326,8 +332,16 @@ public class DubboDirectDriver implements RpcDriver {
             return curatorClient;
         }
 
-        if (registryUrl.startsWith("zookeeper://")) {
-            String zkAddress = registryUrl.substring("zookeeper://".length()).split("[/?]", 2)[0];
+        String raw = registryUrl != null ? registryUrl.trim() : "";
+        String zkAddress = raw;
+        if (zkAddress.startsWith("zookeeper://")) {
+            zkAddress = zkAddress.substring("zookeeper://".length());
+        } else if (zkAddress.startsWith("zk://")) {
+            zkAddress = zkAddress.substring("zk://".length());
+        }
+        zkAddress = zkAddress.split("[/?]", 2)[0].trim();
+
+        if (!zkAddress.isEmpty()) {
             try {
                 curatorClient = CuratorFrameworkFactory.builder()
                         .connectString(zkAddress)
@@ -342,10 +356,10 @@ public class DubboDirectDriver implements RpcDriver {
             } catch (Exception e) {
                 if (curatorClient != null) { curatorClient.close(); curatorClient = null; }
                 if (e instanceof InterruptedException) Thread.currentThread().interrupt();
-                throw new IllegalStateException("Cannot connect to ZooKeeper for " + env, e);
+                throw new IllegalStateException("Cannot connect to ZooKeeper (" + zkAddress + ") for " + env, e);
             }
         }
-        if (curatorClient == null) throw new IllegalStateException("Unsupported registry URL for " + env);
+        if (curatorClient == null) throw new IllegalStateException("Unsupported registry URL for " + env + ": " + registryUrl);
         return curatorClient;
     }
 

@@ -58,11 +58,16 @@ public class ConfigManager {
     }
 
     public String getProperty(String key) {
-        return properties.getProperty(key);
+        String val = properties.getProperty(key);
+        if (val == null) {
+            val = System.getProperty(key);
+        }
+        return val != null ? val.trim() : null;
     }
 
     public String getProperty(String key, String defaultValue) {
-        return properties.getProperty(key, defaultValue);
+        String val = getProperty(key);
+        return val != null ? val : defaultValue;
     }
 
     public boolean getBoolean(String key, boolean defaultValue) {

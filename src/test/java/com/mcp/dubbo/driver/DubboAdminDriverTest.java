@@ -80,4 +80,22 @@ public class DubboAdminDriverTest {
         DubboAdminDriver.attachCredential(b,"Authorization: token-with-padding=");
         Assert.assertEquals("token-with-padding=",b.build().header("Authorization"));
     }
+    @Test public void supportsNestedApiEnvelopeResponses() {
+        JSONObject envelope = JSON.parseObject("{\"code\":200,\"message\":\"ok\",\"data\":{\"content\":[\"com.corp.ServiceA\",\"com.corp.ServiceB\"]}}");
+        JSONArray array = DubboAdminDriver.toServiceArray(envelope);
+        Assert.assertNotNull(array);
+        Assert.assertEquals(2, array.size());
+    }
+    @Test public void extractsMetadataFromDataEnvelope() {
+        JSONObject envelope = JSON.parseObject("{\"code\":200,\"data\":{\"metadata\":{\"methods\":[{\"name\":\"test\"}]}}}");
+        JSONObject meta = DubboAdminDriver.extractMetadata(envelope);
+        Assert.assertNotNull(meta);
+        Assert.assertTrue(meta.containsKey("methods"));
+    }
+    @Test public void skipsDirtyAndNullEntriesInServiceArray() {
+        JSONArray dirty = JSON.parseArray("[null, {}, {\"invalid\":123}, {\"service\":\"com.corp.ValidService\"}]");
+        JSONArray unwrapped = DubboAdminDriver.toServiceArray(dirty);
+        Assert.assertNotNull(unwrapped);
+        Assert.assertEquals(4, unwrapped.size());
+    }
 }
