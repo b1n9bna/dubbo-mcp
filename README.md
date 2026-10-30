@@ -14,7 +14,7 @@ Dubbo-MCP 是连接 AI 编程助手（Codex、Cursor、Claude Code、ZCode 等�
 
 ---
 
-## 架构与工作原理
+## 🏗️ 架构与工作原理
 
 ```
  ┌────────────────────────────────────────────────────────┐
@@ -43,7 +43,7 @@ Dubbo-MCP 是连接 AI 编程助手（Codex、Cursor、Claude Code、ZCode 等�
 
 ---
 
-## 快速上手
+## 🚀 快速上手
 
 ### 1. 一键脚本安装
 
@@ -70,7 +70,7 @@ dubbo-mcp install
 
 ---
 
-## 配置说明
+## ⚙️ 配置说明
 
 配置文件路径：`~/.dubbo-mcp/config.properties`
 
@@ -111,7 +111,7 @@ security.readonly.regex=^(get|query|find|select|list|count|check|is|search|fetch
 
 ---
 
-## 生产环境登录授权 (dubbo-admin)
+## 🔐 生产环境登录授权 (dubbo-admin)
 
 企业内部的 Dubbo Admin 通常接入了单点登录（SSO/OAuth）。若配置了 `env.prod.type=dubbo-admin`，首次使用或会话过期后，需在终端执行一次凭据保存：
 
@@ -131,7 +131,7 @@ security.readonly.regex=^(get|query|find|select|list|count|check|is|search|fetch
 
 ---
 
-## 客户端手动接入配置
+## 🔌 客户端手动接入配置
 
 若未使用 `dubbo-mcp install` 自动注入，也可手动在对应工具的配置文件中添加：
 
@@ -165,7 +165,7 @@ args = []
 
 ---
 
-## 使用示例
+## 💬 使用示例
 
 配置完成后，可以在 AI 对话中直接用自然语言发起请求：
 
@@ -190,7 +190,7 @@ args = []
 
 ---
 
-## 安全控制
+## 🛡️ 安全控制
 
 为防止误操作影响线上稳定性，针对生产环境提供了两项保护机制：
 1. **只读方法校验**：在开启 `readonly=true` 的环境中，仅允许执行匹配 `security.readonly.regex` 正则的方法（如 `get*`、`query*`、`find*` 等只读前缀），写操作（如 `update*`、`delete*`）会被直接拦截；
@@ -198,7 +198,7 @@ args = []
 
 ---
 
-## MCP 工具列表
+## 🛠️ MCP 工具列表
 
 | 工具名 | 参数 | 说明 |
 | :--- | :--- | :--- |
@@ -210,7 +210,7 @@ args = []
 
 ---
 
-## 性能与资源指标
+## 📊 性能与资源指标
 
 | 指标 | 实测数值 | 说明 |
 | :--- | :--- | :--- |
@@ -221,7 +221,7 @@ args = []
 
 ---
 
-## 常见问题
+## ❓ 常见问题
 
 <details>
 <summary><b>1. 复杂的 Java DTO 入参（嵌套对象、枚举）怎么传？</b></summary>
@@ -246,7 +246,7 @@ Dubbo-MCP 基于 Dubbo 原生泛化调用（Generic Invocation）：
 
 ---
 
-## 本地构建与测试
+## 💻 本地构建与测试
 
 ```bash
 # 运行单元测试
