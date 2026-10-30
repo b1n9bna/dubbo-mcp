@@ -1,273 +1,157 @@
-<p align="center">
-  <h1 align="center">🧭 Dubbo-MCP</h1>
-  <p align="center">
-    <strong>企业级 Dubbo RPC & HTTP 微服务的大模型 (Model Context Protocol) 运行时底座</strong><br>
-    专为 Codex (CLI / Desktop / IDEA)、Cursor 与 Claude Code 设计 · 纯 JDK 8 · 0% Spring 臃肿 · 毫秒级秒起 · 免 Jar 包泛化调用
-  </p>
-  <p align="center">
-    <img src="https://img.shields.io/badge/JDK-8_|_11_|_17_|_21-blue?style=flat-square&logo=openjdk" alt="JDK 8+">
-    <img src="https://img.shields.io/badge/Spring_Boot-0%25_(Pure_Java)-success?style=flat-square&logo=spring" alt="Zero Spring">
-    <img src="https://img.shields.io/badge/Dubbo-2.7.x_|_3.x_Compatible-orange?style=flat-square&logo=apache" alt="Dubbo Compatible">
-    <img src="https://img.shields.io/badge/Cold_Start-<100_ms-brightgreen?style=flat-square&logo=lightning" alt="Cold Start">
-    <img src="https://img.shields.io/badge/Target_Client-Codex_|_Cursor_|_Claude-purple?style=flat-square" alt="AI Clients">
-    <img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg?style=flat-square" alt="License">
-  </p>
-</p>
+# dubbo-mcp
+
+连接 AI 编程助手（Codex、Cursor、Claude Code、ZCode 等）与 Dubbo 微服务的 [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) 服务端。
+
+在日常排查业务问题或联调时，让 AI 助手可以直接检索微服务、查看接口入参结构、并发起接口调用，无需手动编写测试代码或引入业务依赖 Jar 包。
 
 ---
 
-## 💡 为什么需要 Dubbo-MCP？
+## 功能概述
 
-在 AI 编程大模型普及的今天，所有的 Coding Agent（如 Codex CLI、Cursor、Claude Code）都被困在本地沙箱里。
-
-当开发和排查业务问题时，我们最常对 AI 说的一句话是：
-> **“帮我查一下生产订单号 2026103001 为什么没发货？”**
-
-然而，目前的现实痛点是：
-1. **海外开源生态完全脱节**：市面上的 MCP 全是 PostgreSQL、Slack、GitHub，根本不懂中国庞大的 **Java + Dubbo + ZooKeeper/Nacos** 内部微服务资产；
-2. **直接查库（Text-to-SQL）不可行**：绕过业务逻辑校验、无法跨库关联、缺乏数据脱敏，甚至存在线上删库的高危风险；
-3. **生产网络隔离死穴**：测试环境在内网，生产环境在外网甚至隔着堡垒机与防火墙，外部工具根本不可能直接连上生产的 ZooKeeper 端口和 Dubbo 端口。
-
-**Dubbo-MCP 就是为打破这一僵局而生的企业级“大模型 RPC 转接头”：**
-- **测试环境**：直连内网 ZooKeeper，走纯 Java 泛化调用，亚毫秒级响应；
-- **生产环境**：直接桥接企业已有的 **`dubbo-admin` 控制台**，零网络申请、零防火墙门槛，合规穿透内网；
-- **极度轻量克制**：基于纯 **JDK 8** 编写，**0% Spring 依赖**，启动 `< 100ms`，内存仅占用约 25MB，STDIO 标准流绝对隔离，绝不污染日志导致 Codex 崩溃。
+- **双通道调用**：
+  - **开发/测试环境**：直连 ZooKeeper，通过 Dubbo 原生泛化调用（`GenericService`）发起 RPC 请求；
+  - **生产环境**：桥接现有的 `dubbo-admin` 控制台 HTTP API，避免外部工具直连生产集群端口。
+- **免引入接口依赖**：自动从注册中心识别服务版本（`version`）与分组（`group`），并从 ZooKeeper 元数据反查方法入参类型及 DTO 字段结构。
+- **环境管理与安全控制**：
+  - 支持多环境配置（`test` / `uat` / `prod`），可在对话中动态切换；
+  - 生产环境支持只读方法正则拦截（默认仅允许查询操作）与敏感信息（手机号、身份证）脱敏。
+- **轻量独立进程**：基于纯 Java 8 实现（无 Spring 框架依赖），启动快速，日志严格重定向至 `stderr`，确保 `stdout` 仅用于 MCP 的 JSON-RPC 通信。
 
 ---
 
-## 🏗️ 架构全景与工作原理
+## 快速安装
 
-```
- ┌────────────────────────────────────────────────────────┐
- │   AI Clients (Codex CLI / Codex Desktop / Cursor)      │
- └───────────────────────────┬────────────────────────────┘
-                             │
-               STDIO 标准输入输出 (JSON-RPC 2.0)
-                             │
- ┌───────────────────────────▼────────────────────────────┐
- │  1. Transport 层: StdioJsonRpcServer (纯 Java 8 实现)   │
- │     - 严格隔离第三方日志到 System.err，杜绝 Codex 解析崩溃 │
- ├────────────────────────────────────────────────────────┤
- │  2. 安全守卫与两阶段调度层                              │
- │     - 两阶段动态按需探测 (搜索 -> 查元数据 -> 执行调用)      │
- │     - 生产环境只读硬核锁定 (拦截非查询写操作) + 数据脱敏     │
- ├────────────────────────────────────────────────────────┤
- │  3. 核心驱动层 (Dual-Engine Driver)                     │
- │     - 测试环境: DubboDirectDriver (纯编程式泛化调用 + 缓存) │
- │     - 生产环境: DubboAdminDriver (HTTP 桥接已有 dubbo-admin)│
- └───────────────────────────┬────────────────────────────┘
-              ┌──────────────┴──────────────┐
-              ▼                             ▼
-   [测试内网: 纯 RPC 泛化调用]       [生产环境: HTTP 桥接]
-   ZooKeeper + Dubbo Pods           企业已有 Dubbo-Admin 控制台
-```
+### 1. 一键脚本安装
 
----
-
-## ⚡ 极速安装与配置（像 CodeGraph 一样简单）
-
-### 步骤 1：终端一行命令安装
-
-**macOS / Linux 用户：**
+**macOS / Linux：**
 ```bash
 curl -fsSL https://raw.githubusercontent.com/b1n9bna/dubbo-mcp/main/install.sh | sh
 ```
 
-**Windows (PowerShell) 用户：**
+**Windows (PowerShell)：**
 ```powershell
 irm https://raw.githubusercontent.com/b1n9bna/dubbo-mcp/main/install.ps1 | iex
 ```
 
-*脚本会自动完成以下动作：*
-1. 下载可执行核心至 `~/.dubbo-mcp/dubbo-mcp.jar`；
-2. 注册系统全局命令 `dubbo-mcp`（从此无需敲冗长的 `java -jar ...`）；
-3. **自动扫描并一键配置本机的全部 AI 助手**（Codex、Cursor、Claude Desktop）！
-
----
-
-### 步骤 2：自动连接你的 AI 编程助手（一键多端生效）
-
-安装脚本会自动触发检测。如果你后续新安装了 AI 工具，随时只需敲一行：
+脚本会下载可执行文件至 `~/.dubbo-mcp/dubbo-mcp.jar`，并创建全局命令 `dubbo-mcp`。安装后可随时执行以下命令自动为本机已安装的 AI 工具写入配置：
 ```bash
 dubbo-mcp install
 ```
 
-终端将自动探测并完成注入，完全无需手动翻找深层配置文件：
-```
-🚀 [Dubbo-MCP] 正在自动检测并配置本机的 AI Coding Agents...
-
-✅ Codex: 成功配置 ~/.codex/config.toml
-✅ Claude Desktop: 成功配置 ~/Library/Application Support/Claude/claude_desktop_config.json
-✅ Cursor: 成功配置 ~/.cursor/mcp.json
-
-==================================================================
-🎉 [Dubbo-MCP] 配置完成！请重启您的 AI 编程工具即可开始使用。
-==================================================================
-```
-
-*(如果你更习惯源码构建，也可执行 `mvn clean package -DskipTests` 后使用 `target/dubbo-mcp-1.0.0-SNAPSHOT.jar install`)*
+*(也支持本地源码编译：`mvn clean package -DskipTests`)*
 
 ---
 
-## ⚙️ 要配置什么？配置文件详解
+## 配置说明
 
-在第一次运行后，或手动创建本地用户配置文件：  
-📁 **`~/.dubbo-mcp/config.properties`**
-
-你可以自由配置**多套环境矩阵（test / uat / prod）**：
+配置文件路径：`~/.dubbo-mcp/config.properties`
 
 ```properties
-# 当前默认激活的环境 (test / uat / prod)
+# 默认激活的环境 (test / uat / prod)
 active.env=test
 
 # ==============================================================================
-# 1. 开发/测试环境 (直接连公司内网 ZooKeeper，纯 RPC 泛化调用，极致性能)
+# 1. 测试环境 (直连 ZooKeeper)
 # ==============================================================================
 env.test.type=zookeeper
-env.test.registry=zookeeper://192.168.1.10:2181
+env.test.registry=zookeeper://127.0.0.1:2181
 env.test.timeout=5000
-# 测试环境允许调写接口造数据
 env.test.readonly=false
 
 # ==============================================================================
-# 2. 预发环境 (UAT / Staging)
-# ==============================================================================
-env.uat.type=zookeeper
-env.uat.registry=zookeeper://10.20.1.15:2181
-env.uat.timeout=5000
-env.uat.readonly=true
-
-# ==============================================================================
-# 3. 生产环境 (直接桥接公司已有的 dubbo-admin 控制台，免防火墙、安全合规)
+# 2. 生产环境 (对接 dubbo-admin)
 # ==============================================================================
 env.prod.type=dubbo-admin
-env.prod.admin_url=https://dubbo-admin.yourcompany.com
-# 生产按方法名规则限制调用
+env.prod.admin_url=https://dubbo.yourcompany.com
 env.prod.readonly=true
-# 对字符串中的手机号、身份证脱敏，保留 JSON 数值类型
 env.prod.data_masking=true
 
-# ==============================================================================
-# 4. 安全风控守卫 (Security Guards)
-# ==============================================================================
-# 当环境为 readonly=true 时，仅允许匹配该正则的方法名被执行，其余写操作硬阻断
+# 只读规则：开启 readonly=true 时，仅允许匹配该正则的方法名被执行
 security.readonly.regex=^(get|query|find|select|list|count|check|is|search|fetch|read).*$
 
-# 自定义 Admin API 上下文（可选，不包含 /api/dev）
+# 自定义 dubbo-admin 上下文路径（可选，如 /dubbo-admin）
 # env.prod.admin_api_prefix=/dubbo-admin
 ```
 
 ---
 
-## 🔐 登录 Dubbo Admin
+## 客户端接入示例
 
-MCP 调用不会等待交互式登录。缺少或过期的凭据会立即返回工具错误。
+### Codex
+在 `~/.codex/config.toml` 中添加：
+```toml
+[mcp_servers.dubbo]
+command = "dubbo-mcp"
+args = []
+```
 
-1. 在浏览器中登录 Dubbo Admin，在该站点的开发者控制台执行：
+### Cursor
+在 `.cursor/mcp.json` 中添加：
+```json
+{
+  "mcpServers": {
+    "dubbo": {
+      "command": "dubbo-mcp",
+      "args": []
+    }
+  }
+}
+```
 
+### Claude Code / ZCode
+可通过 Git 仓库作为插件添加：
+```bash
+/plugin marketplace add https://github.com/b1n9bna/dubbo-mcp.git
+```
+或直接在 MCP 服务器配置中以 `stdio` 方式配置命令 `dubbo-mcp`。
+
+---
+
+## MCP 工具列表
+
+| 工具名 | 说明 |
+| :--- | :--- |
+| `dubbo_list_services` | 按关键字搜索注册中心上的 Dubbo 服务接口 |
+| `dubbo_get_service_detail` | 获取接口下的方法名、参数类型、DTO 字段结构及版本/分组信息 |
+| `dubbo_invoke` | 执行接口调用，传入 JSON 入参，返回服务端的执行结果 |
+| `dubbo_list_envs` | 查看已配置的环境列表及当前激活的环境 |
+| `dubbo_switch_env` | 切换当前默认环境（如 `test` / `prod`） |
+
+---
+
+## 常见问题与说明
+
+### 1. 生产环境（dubbo-admin）如何处理 SSO 登录？
+若企业内部的 Dubbo Admin 接入了单点登录（飞书、企业微信、钉钉等）：
+1. 在浏览器中打开 Dubbo Admin 完成登录；
+2. 按 `F12` 打开控制台，执行以下代码复制凭据：
    ```javascript
    copy(JSON.stringify({cookie: document.cookie, authorization: localStorage.getItem('token')}))
    ```
-
-2. macOS 终端执行：
-
-   ```sh
+3. 在本地终端执行：
+   ```bash
    dubbo-mcp login --env=prod --clipboard
    ```
+   CLI 会验证凭据有效性并保存至 `~/.dubbo-mcp/session-prod.json`（POSIX 权限 `0600`）。MCP 服务在调用时会自动热读取该文件，会话过期后重新执行上述命令即可，无需重启 AI 助手。
 
-   也可使用 `dubbo-mcp login --file /path/to/credential.json`，或通过管道传入 `dubbo-mcp login --stdin`。无参数的 `login` 支持隐藏回显的交互输入；Unix 终端读取时关闭 canonical 行缓冲，避免长 Cookie 超过终端输入上限后卡住。不要把凭据作为命令行参数或发送到聊天。
+### 2. 带版本（version）或分组（group）的接口如何调用？
+通常情况下无需手动配置：
+- 发起调用前，底层会自动读取注册中心的 Provider 信息并匹配已注册版本（如 `1.0.0`）；
+- 若同接口存在特定业务分组（如 `group=JF`）和默认分组，未传 group 时优先路由到默认分组；如需指定特定分组，可在 `dubbo_invoke` 中显式传入 `group` 或 `version` 参数。
 
-3. CLI 会先调用只读服务列表验证认证，成功后原子保存到 `~/.dubbo-mcp/session-prod.json`（POSIX 文件权限 `0600`）。新版 MCP 每次请求重新读取该文件，之后更换凭据无需重启；更新 JAR 本身后，需要重启已有 MCP 进程。
-
-该部署使用 Cookie 携带网关会话，并把 `localStorage.token` **原样**放入 `Authorization`，不擅自添加 `Bearer`。其他部署也支持纯 Cookie、`Bearer ...`、`Authorization: ...` 或上述 JSON。只有 Cookie 无法保证 Dubbo Admin 自身认证通过。登录失效后重新执行上述步骤；不承诺心跳可延长服务端会话。
-
-兼容旧配置 `env.prod.admin_cookie`，但 CLI 保存的会话优先，避免旧配置遮蔽新登录。默认从 Admin 首页静态资源路径识别 `/dubbo-admin` 上下文；自定义部署可设置 `env.prod.admin_api_prefix=/custom`（根路径部署设为空）。不支持的 API 返回明确错误，不当作空服务列表。
-
-原生账号密码部署可配置 `env.prod.admin_username` / `env.prod.admin_password`，按当前 Admin 的 `GET /api/dev/user/login` 契约换取 token，再验证保存。仅用于匹配该 API 的部署；SSO 请使用浏览器登录。
-
----
-
-## 💬 真实使用演示（在 Codex 中怎么用？）
-
-配置完成后，打开 Codex / Cursor，你可以像日常和同事对话一样使用自然语言：
-
-### 场景 1：排查线上业务状态（自动触发生产桥接）
-> **你**：*“在生产环境查一下订单号 2026103001 的详情，分析为什么没发货？”*  
-> **Codex**：
-> 1. 自动调用 `dubbo_invoke`（传入 `env="prod"`、`interfaceName="com.corp.OrderQueryService"`、`method="getOrderDetail"`）；
-> 2. Dubbo-MCP 带着安全 Cookie 请求生产 `dubbo-admin` 并对手机号自动脱敏；
-> 3. Codex 解析返回的 JSON 回答：  
->    *“根据查询结果，订单当前状态为已支付（PAID），但仓库物流单号为空，停留在配货状态（STOCKING），因此尚未发货。”*
+### 3. 复杂 DTO 入参怎么传？
+Dubbo 泛化调用支持将 JSON Map 映射为 Java 对象：
+- 先调用 `dubbo_get_service_detail` 查看方法所需的 DTO 字段属性（如 `current`, `size`, `calculationDateList` 等）；
+- 在 `dubbo_invoke` 的 `args` 中直接传入对应字段的 JSON 对象即可，底层会自动匹配真实类名并完成转换。
 
 ---
 
-### 场景 2：探索内网服务与方法
-> **你**：*“内网测试环境有哪些与‘用户 (user)’相关的 Dubbo 服务？查看它们提供了哪些方法。”*  
-> **Codex**：
-> 1. 调用 `dubbo_list_services(keyword="user")`，返回相关接口；
-> 2. 调用 `dubbo_get_service_detail` 获取接口下的全部方法签名；
-> 3. 清晰列出用户相关的服务列表供你选择。
+## 本地开发与构建
 
----
-
-### 场景 3：跨环境动态秒切
-> **你**：*“把当前环境切到 UAT 环境，接下来帮我做联调。”*  
-> **Codex**：
-> 自动调用 `dubbo_switch_env(env="uat")`，后续所有 RPC 查询无缝走预发集群。
-
----
-
-## 🛡️ 生产安全与防手滑铁律
-
-针对生产环境调用，Dubbo-MCP 设置了**硬核三重防线**：
-1. **只读方法正则拦截**：
-   在配置了 `readonly=true` 的环境（如 prod），底层在发包前严格校验方法名前缀。
-   - 允许：`get*`, `query*`, `find*`, `select*`, `list*`, `count*`, `is*` 等只读前缀；
-   - 阻断：`save*`, `update*`, `delete*`, `remove*`, `create*` 等可能修改数据的操作，直接阻断并报错，防止手滑搞坏线上数据。
-2. **敏感隐私自动打码**：
-   开启 `data_masking=true` 后，底座内置针对中国大陆手机号（`138****5678`）和 18 位身份证（`110101********2345`）的正则过滤，防止用户数据泄漏到对话上下文。
-
----
-
-## ❓ 常见问题 (FAQ)
-
-<details>
-<summary><b>Q1: 为什么不用 Spring Boot，而是用纯 Java 8？</b></summary>
-MCP 依赖进程的标准输入输出（STDIO）进行通信。Spring Boot 启动时默认打印绿色 Banner 和大量的启动日志，会直接污染 stdout 导致 Codex 解析 JSON 崩溃；此外 Spring Boot 冷启动慢（3~8秒）且占用 300MB+ 内存。纯 Java 8 实现了绝对流隔离，启动仅需 100 毫秒，内存仅 25MB。
-</details>
-
-<details>
-<summary><b>Q2: 复杂的 Java DTO 入参（枚举、嵌套对象）不需要引 Jar 包吗？参数类型怎么填？</b></summary>
-完全不需要！Dubbo-MCP 基于 Dubbo 原生的<strong>泛化调用 (Generic Invocation)</strong>，并内置了<strong>元数据自适应引擎</strong>：
-1. <strong>全自动类型反查</strong>：Dubbo-MCP 会直接从 ZooKeeper 元数据中心读取接口定义的真实 DTO 类名（如 <code>ClearancePriceInfoQueryDTO</code>），AI Agent 调用时即使不指定 <code>paramTypes</code>，底层仅在同名、同参数数量的签名唯一时自动匹配。缺少元数据或存在重载歧义时，请显式传入 <code>paramTypes</code>，显式的 Map/Object 类型不会被替换。
-2. <strong>字段结构透出</strong>：调用 <code>dubbo_get_service_detail</code> 时，不仅能看到方法，还会直接返回入参 DTO 的全部字段属性（如 <code>current, size, calculationDateList</code>），AI 助手无需查看 Java 源码即可直接准确构造入参！
-3. <strong>版本与分组自适应</strong>：自动探测注册中心上的 <code>version</code>（如 <code>1.0.0</code>）与 <code>group</code>（如 <code>JF</code>），仅在匹配的版本与分组组合唯一时自动选择；存在多组候选时必须指定 <code>version</code> / <code>group</code>，不随意选择第一个。
-</details>
-
-<details>
-<summary><b>Q3: 提示 "Session expired" 怎么办？</b></summary>
-在浏览器重新登录后，按上文复制 Cookie + Authorization JSON，运行 `dubbo-mcp login --clipboard`；通过验证后才能恢复调用。
-</details>
-
----
-
-## 🤝 参与贡献与扩展点 (SPI)
-
-Dubbo-MCP 设计了清晰的扩展接口，欢迎社区提交 PR：
-* `RpcDriver`：扩展自定义 RPC 协议（如 gRPC、Dubbo 3.x Triple、SOFARPC）；
-* `AuthStrategy`：扩展定制企业专用 SSO 策略；
-* `SecurityFilter`：扩展企业自研风控与脱敏审计链。
-
-**如果对你的日常工作有帮助，欢迎点一个 Star ⭐️ 支持！**
-
-## 本地验证
-
-```sh
-# macOS 下含中文目录时使用系统支持的 UTF-8 locale
+```bash
+# 运行单元测试
 LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 mvn test
-LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 mvn package
+
+# 打包 Fat-JAR
+LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 mvn package -DskipTests
 ```
-
-回归测试使用本机模拟 HTTP 服务和临时凭据目录，不访问生产业务。覆盖认证 header、API 路径、服务版本/分组、异常返回、重载歧义、跨进程凭据刷新、文件权限、JSON-RPC 错误响应、配置保留和 JSON 脱敏。
-
-Codex 使用 `[mcp_servers.dubbo]` 配置节（[官方文档](https://developers.openai.com/learn/docs-mcp)）。安装器保留已有自定义命令和参数；旧 `[mcp.servers.dubbo]` 节在没有新节时迁移。下载或 JAR 校验失败会停止安装并保留旧 JAR。
