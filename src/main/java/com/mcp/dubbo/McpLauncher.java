@@ -17,6 +17,9 @@ public class McpLauncher {
                 if ("install".equalsIgnoreCase(arg) || "--install".equalsIgnoreCase(arg) || "-i".equalsIgnoreCase(arg)) {
                     com.mcp.dubbo.installer.AgentAutoInstaller.installAll();
                     return;
+                } else if ("login".equalsIgnoreCase(arg) || "--login".equalsIgnoreCase(arg)) {
+                    runInteractiveLogin(args);
+                    return;
                 } else if ("--install-codex".equalsIgnoreCase(arg)) {
                     CodexTomlInstaller.install();
                     return;
@@ -38,11 +41,36 @@ public class McpLauncher {
         server.start();
     }
 
+    private static void runInteractiveLogin(String[] args) {
+        String targetEnv = "prod";
+        if (args != null) {
+            for (String a : args) {
+                if (a.startsWith("--env=")) {
+                    targetEnv = a.substring("--env=".length()).trim();
+                }
+            }
+        }
+        System.out.println("🔐 [Dubbo-MCP] 生产环境凭据配置 (目标环境: " + targetEnv + ")");
+        System.out.println("👉 请在浏览器已登录的 Dubbo-Admin 页面 (F12 控制台) 执行: copy(document.cookie)");
+        System.out.print("👉 请在此粘贴 Cookie 内容并按回车: ");
+        java.util.Scanner scanner = new java.util.Scanner(System.in);
+        if (scanner.hasNextLine()) {
+            String line = scanner.nextLine().trim();
+            if (!line.isEmpty()) {
+                com.mcp.dubbo.auth.AuthSessionManager.getInstance().saveCredential(targetEnv, line);
+                System.out.println("\n✅ [Dubbo-MCP] 凭据保存成功！已自动生效，重启或直接在 Codex 中调用即可。");
+                return;
+            }
+        }
+        System.out.println("⚠️ 未输入有效凭证，操作已取消。");
+    }
+
     private static void printHelp() {
         System.err.println("🧭 Dubbo-MCP: The Enterprise Dubbo RPC Bridge for AI Coding Agents");
         System.err.println("Usage:");
         System.err.println("  dubbo-mcp                               # Start MCP Stdio Server");
         System.err.println("  dubbo-mcp install                       # Auto-detect and wire up all AI agents (Codex, Cursor, Claude)");
+        System.err.println("  dubbo-mcp login                         # Paste and save session Cookie for production");
         System.err.println("  dubbo-mcp --env=prod                    # Start with default env=prod");
     }
 }

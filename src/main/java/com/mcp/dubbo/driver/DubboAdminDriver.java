@@ -50,6 +50,33 @@ public class DubboAdminDriver implements RpcDriver {
         return "dubbo-admin";
     }
 
+    private volatile String detectedPrefix = null;
+
+    private String getApiUrl(String subPath) {
+        if (adminUrl.endsWith("/dubbo-admin")) {
+            return adminUrl + subPath;
+        }
+        if (detectedPrefix == null) {
+            detectPrefix();
+        }
+        return adminUrl + detectedPrefix + subPath;
+    }
+
+    private synchronized void detectPrefix() {
+        if (detectedPrefix != null) return;
+        try {
+            Request req = new Request.Builder().url(adminUrl + "/dubbo-admin/api/dev/services").head().build();
+            try (Response resp = httpClient.newCall(req).execute()) {
+                if (resp.code() != 404) {
+                    detectedPrefix = "/dubbo-admin";
+                    return;
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        detectedPrefix = "";
+    }
+
     @Override
     public Object invoke(String interfaceName, String method, String[] paramTypes, Object[] args) throws Exception {
         return executeWithAuthRetry(() -> {
@@ -66,8 +93,8 @@ public class DubboAdminDriver implements RpcDriver {
                     payload.toJSONString()
             );
 
-            // Standard Dubbo-Admin test invocation endpoint
-            String apiUrl = adminUrl + "/api/dev/test";
+            // Standard Dubbo-Admin test invocation endpoint (with auto-detected context path)
+            String apiUrl = getApiUrl("/api/dev/test");
 
             Request.Builder reqBuilder = new Request.Builder()
                     .url(apiUrl)
@@ -75,8 +102,8 @@ public class DubboAdminDriver implements RpcDriver {
             attachCredential(reqBuilder, credential);
 
             try (Response response = httpClient.newCall(reqBuilder.build()).execute()) {
-                if (response.code() == 401 || response.code() == 302) {
-                    throw new SessionExpiredException("dubbo-admin session expired (HTTP " + response.code() + ")");
+                if (response.code() == 401 || response.code() == 302 || response.code() == 403) {
+                    throw new SessionExpiredException("dubbo-admin session expired or forbidden (HTTP " + response.code() + ")");
                 }
                 if (!response.isSuccessful()) {
                     String errBody = response.body() != null ? response.body().string() : "";
@@ -94,14 +121,14 @@ public class DubboAdminDriver implements RpcDriver {
         try {
             executeWithAuthRetry(() -> {
                 String credential = ensureCredential();
-                String apiUrl = adminUrl + "/api/dev/services";
+                String apiUrl = getApiUrl("/api/dev/services");
 
                 Request.Builder reqBuilder = new Request.Builder().url(apiUrl).get();
                 attachCredential(reqBuilder, credential);
 
                 try (Response response = httpClient.newCall(reqBuilder.build()).execute()) {
-                    if (response.code() == 401 || response.code() == 302) {
-                        throw new SessionExpiredException("dubbo-admin session expired");
+                    if (response.code() == 401 || response.code() == 302 || response.code() == 403) {
+                        throw new SessionExpiredException("dubbo-admin session expired or forbidden");
                     }
                     if (response.isSuccessful() && response.body() != null) {
                         String bodyStr = response.body().string();
@@ -132,14 +159,14 @@ public class DubboAdminDriver implements RpcDriver {
         try {
             executeWithAuthRetry(() -> {
                 String credential = ensureCredential();
-                String apiUrl = adminUrl + "/api/dev/service/" + interfaceName + "/testMethod";
+                String apiUrl = getApiUrl("/api/dev/service/" + interfaceName + "/testMethod");
 
                 Request.Builder reqBuilder = new Request.Builder().url(apiUrl).get();
                 attachCredential(reqBuilder, credential);
 
                 try (Response response = httpClient.newCall(reqBuilder.build()).execute()) {
-                    if (response.code() == 401 || response.code() == 302) {
-                        throw new SessionExpiredException("dubbo-admin session expired");
+                    if (response.code() == 401 || response.code() == 302 || response.code() == 403) {
+                        throw new SessionExpiredException("dubbo-admin session expired or forbidden");
                     }
                     if (response.isSuccessful() && response.body() != null) {
                         meta.put("details", JSON.parse(response.body().string()));
@@ -182,7 +209,13 @@ public class DubboAdminDriver implements RpcDriver {
             }
         }
 
-        return browserAuth.getValidCredential(env, adminUrl);
+        // DO NOT block the tool execution with interactive browser pops (prevents AI agent client timeouts).
+        // Return clear, actionable error instruction immediately.
+        throw new IllegalStateException("生产环境 (" + env + ") 尚未配置登录凭据 (Cookie/Token)。\n" +
+                "【快速解决方式】：\n" +
+                "1. 请在已登录的浏览器 Dubbo-Admin 页面 (F12 控制台) 执行: copy(document.cookie)\n" +
+                "2. 粘贴到 ~/.dubbo-mcp/config.properties 中的 env." + env + ".admin_cookie 字段；\n" +
+                "   或者在终端执行: dubbo-mcp login 粘贴保存。");
     }
 
     private String tryPasswordLogin(String username, String password) {
