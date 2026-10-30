@@ -61,6 +61,8 @@ public class TwoStageToolRegistry {
         invokeProps.put("method", Collections.singletonMap("type", "string"));
         invokeProps.put("paramTypes", Collections.singletonMap("type", "array"));
         invokeProps.put("args", Collections.singletonMap("type", "array"));
+        invokeProps.put("version", Collections.singletonMap("type", "string"));
+        invokeProps.put("group", Collections.singletonMap("type", "string"));
         invokeProps.put("env", Collections.singletonMap("type", "string"));
         invokeSchema.put("properties", invokeProps);
         invokeSchema.put("required", Arrays.asList("interfaceName", "method"));
@@ -134,8 +136,10 @@ public class TwoStageToolRegistry {
                 String[] rawParamTypes = parseStringArray(arguments.get("paramTypes"));
                 Object[] args = parseObjectArray(arguments.get("args"));
                 String[] paramTypes = normalizeParamTypes(rawParamTypes, args);
+                String version = (String) arguments.get("version");
+                String group = (String) arguments.get("group");
 
-                Object result = profileRouter.invoke(env, iface.trim(), method.trim(), paramTypes, args);
+                Object result = profileRouter.invoke(env, iface.trim(), method.trim(), paramTypes, args, version, group);
                 JSONObject wrapper = new JSONObject();
                 wrapper.put("status", "SUCCESS");
                 wrapper.put("env", profileRouter.resolveEnv(env));

@@ -79,6 +79,11 @@ public class DubboAdminDriver implements RpcDriver {
 
     @Override
     public Object invoke(String interfaceName, String method, String[] paramTypes, Object[] args) throws Exception {
+        return invoke(interfaceName, method, paramTypes, args, null, null);
+    }
+
+    @Override
+    public Object invoke(String interfaceName, String method, String[] paramTypes, Object[] args, String version, String group) throws Exception {
         return executeWithAuthRetry(() -> {
             String credential = ensureCredential();
 
@@ -87,6 +92,13 @@ public class DubboAdminDriver implements RpcDriver {
             payload.put("method", method);
             payload.put("parameterTypes", paramTypes != null ? Arrays.asList(paramTypes) : Collections.emptyList());
             payload.put("params", args != null ? Arrays.asList(args) : Collections.emptyList());
+
+            if (version != null && !version.trim().isEmpty()) {
+                payload.put("version", version.trim());
+            }
+            if (group != null && !group.trim().isEmpty()) {
+                payload.put("group", group.trim());
+            }
 
             RequestBody body = RequestBody.create(
                     MediaType.parse("application/json; charset=utf-8"),

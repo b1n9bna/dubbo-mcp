@@ -37,6 +37,10 @@ public class ProfileRouter {
     }
 
     public Object invoke(String env, String interfaceName, String method, String[] paramTypes, Object[] args) throws Exception {
+        return invoke(env, interfaceName, method, paramTypes, args, null, null);
+    }
+
+    public Object invoke(String env, String interfaceName, String method, String[] paramTypes, Object[] args, String version, String group) throws Exception {
         String targetEnv = resolveEnv(env);
 
         // 1. Safety check (blocks write operations if environment is read-only)
@@ -44,7 +48,7 @@ public class ProfileRouter {
 
         // 2. Execute RPC via appropriate driver
         RpcDriver driver = getDriverForEnv(targetEnv);
-        Object rawResult = driver.invoke(interfaceName, method, paramTypes, args);
+        Object rawResult = driver.invoke(interfaceName, method, paramTypes, args, version, group);
 
         // 3. Mask sensitive data if data_masking is enabled
         boolean mask = configManager.getBoolean("env." + targetEnv + ".data_masking", false);

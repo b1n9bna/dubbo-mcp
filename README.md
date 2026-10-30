@@ -250,8 +250,11 @@ MCP 依赖进程的标准输入输出（STDIO）进行通信。Spring Boot 启�
 </details>
 
 <details>
-<summary><b>Q2: 复杂的 Java DTO 入参（枚举、嵌套对象）不需要引 Jar 包吗？</b></summary>
-不需要！Dubbo-MCP 基于 Dubbo 原生的<strong>泛化调用 (Generic Invocation)</strong>。入参只需以 JSON / Map 形式传入，Dubbo 底层会自动反射转换。
+<summary><b>Q2: 复杂的 Java DTO 入参（枚举、嵌套对象）不需要引 Jar 包吗？参数类型怎么填？</b></summary>
+完全不需要！Dubbo-MCP 基于 Dubbo 原生的<strong>泛化调用 (Generic Invocation)</strong>，并内置了<strong>元数据自适应引擎</strong>：
+1. <strong>全自动类型反查</strong>：Dubbo-MCP 会直接从 ZooKeeper 元数据中心读取接口定义的真实 DTO 类名（如 <code>ClearancePriceInfoQueryDTO</code>），AI Agent 调用时即使不指定 <code>paramTypes</code>，底层也会自动匹配方法签名，杜绝 <code>NoSuchMethodException</code>。
+2. <strong>字段结构透出</strong>：调用 <code>dubbo_get_service_detail</code> 时，不仅能看到方法，还会直接返回入参 DTO 的全部字段属性（如 <code>current, size, calculationDateList</code>），AI 助手无需查看 Java 源码即可直接准确构造入参！
+3. <strong>版本与分组自适应</strong>：自动探测注册中心上的 <code>version</code>（如 <code>1.0.0</code>）与 <code>group</code>（如 <code>JF</code>），零配置即可精准路由到对应 Provider。
 </details>
 
 <details>
