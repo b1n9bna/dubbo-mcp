@@ -47,65 +47,40 @@
   <rect x="1" y="1" width="878" height="338" rx="12" class="card-bg" stroke-width="1.5" />
 
   <!-- Header -->
-  <g transform="translate(32, 34)">
-    <text x="0" y="0" class="title-text">单次服务排查任务 · 大模型上下文 Token 消耗实测</text>
-    <text x="0" y="20" class="subtitle-text">以 Dubbo 生产订单排查为例 · 基于 OpenAI cl100k_base 分词计量（越少越优）</text>
-  </g>
+  <text x="32" y="34" class="title-text">单次服务排查任务 · 大模型上下文 Token 消耗实测</text>
+  <text x="32" y="54" class="subtitle-text">以 Dubbo 生产订单排查为例 · 基于 OpenAI cl100k_base 分词计量（越少越优）</text>
 
   <!-- Row 1: Dubbo-MCP -->
-  <g transform="translate(32, 90)">
-    <text x="0" y="14" class="row-label">Dubbo-MCP</text>
-    <text x="0" y="30" class="row-desc">纯结构化 JSON-RPC · 零网页噪音</text>
-    <!-- Bar Track -->
-    <rect x="230" y="3" width="460" height="20" rx="4" class="track-bg" />
-    <!-- Bar (572 tokens -> ~1.4%, rendered as prominent 12px pill) -->
-    <rect x="230" y="3" width="12" height="20" rx="4" fill="url(#mcpGrad)" />
-    <!-- Value -->
-    <text x="704" y="18" class="val-text-mcp">572 <tspan font-size="11" font-weight="500">(基准 · 1x)</tspan></text>
-  </g>
+  <text x="32" y="104" class="row-label">Dubbo-MCP</text>
+  <text x="32" y="120" class="row-desc">纯结构化 JSON-RPC · 零网页噪音</text>
+  <rect x="262" y="93" width="430" height="20" rx="4" class="track-bg" />
+  <rect x="262" y="93" width="12" height="20" rx="4" fill="url(#mcpGrad)" />
+  <text x="704" y="108" class="val-text-mcp">572 <tspan font-size="11" font-weight="500">(基准 · 1x)</tspan></text>
 
   <!-- Row 2: 视觉浏览器 Agent -->
-  <g transform="translate(32, 146)">
-    <text x="0" y="14" class="row-label">视觉浏览器 Agent</text>
-    <text x="0" y="30" class="row-desc">6 轮 1280×800 截图 · 历史复合累加</text>
-    <!-- Bar Track -->
-    <rect x="230" y="3" width="460" height="20" rx="4" class="track-bg" />
-    <!-- Bar (33465 / 40500 * 460 = 380px) -->
-    <rect x="230" y="3" width="380" height="20" rx="4" fill="url(#visionGrad)" />
-    <!-- Value -->
-    <text x="704" y="18" class="val-text-vision">33,465 <tspan font-size="11" font-weight="500">(58.5×)</tspan></text>
-  </g>
+  <text x="32" y="160" class="row-label">视觉浏览器 Agent</text>
+  <text x="32" y="176" class="row-desc">6 轮 1280×800 截图 · 历史复合累加</text>
+  <rect x="262" y="149" width="430" height="20" rx="4" class="track-bg" />
+  <rect x="262" y="149" width="355" height="20" rx="4" fill="url(#visionGrad)" />
+  <text x="704" y="164" class="val-text-vision">33,465 <tspan font-size="11" font-weight="500">(58.5×)</tspan></text>
 
   <!-- Row 3: DOM 浏览器 Agent -->
-  <g transform="translate(32, 202)">
-    <text x="0" y="14" class="row-label">DOM 浏览器 Agent</text>
-    <text x="0" y="30" class="row-desc">5 轮 DOM 树循环 · 充斥 HTML/CSS 标签</text>
-    <!-- Bar Track -->
-    <rect x="230" y="3" width="460" height="20" rx="4" class="track-bg" />
-    <!-- Bar (40500 / 40500 * 460 = 460px) -->
-    <rect x="230" y="3" width="460" height="20" rx="4" fill="url(#domGrad)" />
-    <!-- Value -->
-    <text x="704" y="18" class="val-text-dom">40,500 <tspan font-size="11" font-weight="500">(70.8×)</tspan></text>
-  </g>
+  <text x="32" y="216" class="row-label">DOM 浏览器 Agent</text>
+  <text x="32" y="232" class="row-desc">5 轮 DOM 树循环 · 充斥 HTML/CSS 标签</text>
+  <rect x="262" y="205" width="430" height="20" rx="4" class="track-bg" />
+  <rect x="262" y="205" width="430" height="20" rx="4" fill="url(#domGrad)" />
+  <text x="704" y="220" class="val-text-dom">40,500 <tspan font-size="11" font-weight="500">(70.8×)</tspan></text>
 
-  <!-- Bottom Metric Pills -->
-  <g transform="translate(32, 268)">
-    <!-- Pill 1 -->
-    <g transform="translate(0, 0)">
-      <rect x="0" y="0" width="260" height="42" rx="8" class="pill-bg" />
-      <text x="130" y="26" class="pill-text">⚡ 耗时：<tspan class="pill-val">&lt; 1s</tspan> vs ~35s</text>
-    </g>
+  <!-- Bottom Metric Pills (Pure Flat Absolute Coordinates) -->
+  <!-- Pill 1: x: 32 to 292 (width 260), center is 162 -->
+  <rect x="32" y="268" width="260" height="42" rx="8" class="pill-bg" />
+  <text x="162" y="294" class="pill-text">⚡ 耗时：<tspan class="pill-val">&lt; 1s</tspan> vs ~35s</text>
 
-    <!-- Pill 2 -->
-    <g transform="translate(278, 0)">
-      <rect x="0" y="0" width="260" height="42" rx="8" class="pill-bg" />
-      <text x="130" y="26" class="pill-text">💰 单次成本：<tspan class="pill-val">~$0.001</tspan> vs ~$0.12</text>
-    </g>
+  <!-- Pill 2: x: 310 to 570 (width 260), center is 440 -->
+  <rect x="310" y="268" width="260" height="42" rx="8" class="pill-bg" />
+  <text x="440" y="294" class="pill-text">💰 单次成本：<tspan class="pill-val">~$0.001</tspan> vs ~$0.12</text>
 
-    <!-- Pill 3 -->
-    <g transform="translate(556, 0)">
-      <rect x="0" y="0" width="260" height="42" rx="8" class="pill-bg" />
-      <text x="130" y="26" class="pill-text">🎯 交互轮数：<tspan class="pill-val">1 轮直达</tspan> vs 5~6 轮</text>
-    </g>
-  </g>
+  <!-- Pill 3: x: 588 to 848 (width 260), center is 260, center is 718 -->
+  <rect x="588" y="268" width="260" height="42" rx="8" class="pill-bg" />
+  <text x="718" y="294" class="pill-text">🎯 交互轮数：<tspan class="pill-val">1 轮直达</tspan> vs 5~6 轮</text>
 </svg>

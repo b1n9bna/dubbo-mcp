@@ -213,7 +213,7 @@ args = []
 ## 📊 性能与 Token 消耗实测
 
 <p align="center">
-  <img src="assets/token-benchmark.svg" alt="单次服务排查任务 Token 消耗实测对比" width="880">
+  <img src="assets/token-benchmark.svg?v=2" alt="单次服务排查任务 Token 消耗实测对比" width="880">
 </p>
 
 > **实测结果**：在单次微服务接口排查任务中，Dubbo-MCP 的结构化调用相比传统浏览器 Agent 方案 **节省约 98% 上下文 Token**，**响应提速 30 倍以上**，且无网页 DOM 噪音与多轮截图历史累加的包袱。
