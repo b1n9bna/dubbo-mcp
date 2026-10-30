@@ -5,7 +5,6 @@
   <img src="https://img.shields.io/badge/Cold_Start-<100_ms-brightgreen?style=flat-square&logo=lightning" alt="Cold Start">
   <img src="https://img.shields.io/badge/RAM_RSS-~25_MB-success?style=flat-square&logo=speedtest" alt="RAM RSS">
   <img src="https://img.shields.io/badge/Dubbo-2.7.x_|_3.x-orange?style=flat-square&logo=apache" alt="Dubbo Compatible">
-  <img src="https://img.shields.io/badge/Spring_Boot-0%25_(Pure_Java)-informational?style=flat-square&logo=spring" alt="Pure Java">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg?style=flat-square" alt="License"></a>
 </p>
 
@@ -24,20 +23,18 @@
 - **环境管理与安全控制**：
   - 支持多环境配置（`test` / `uat` / `prod`），可在对话中动态切换；
   - 生产环境支持只读方法正则拦截（默认仅允许查询操作）与敏感信息（手机号、身份证）脱敏。
-- **轻量独立进程**：基于纯 Java 8 实现（无 Spring 框架依赖），日志严格重定向至 `stderr`，确保 `stdout` 仅用于 MCP 的 JSON-RPC 通信。
+- **标准流严格隔离**：基于标准 Java 8 实现，日志严格重定向至 `stderr`，确保 `stdout` 纯净用于 MCP 的 JSON-RPC 通信。
 
 ---
 
 ## 性能与资源指标
 
-针对 AI 编程工具频繁调用 MCP 进程的特点，本项目保持了轻量化设计，避免占用过多开发机内存：
-
-| 指标维度 | Dubbo-MCP (纯 Java 8) | 传统 Spring Boot 封装方案 | 说明 |
-| :--- | :--- | :--- | :--- |
-| **冷启动耗时** | **< 100 ms** | 3.0 s ~ 8.0 s | 进程随起随用，快速建立连接 |
-| **运行常驻内存 (RSS)** | **~25 MB** | 250 MB ~ 450 MB | 轻量低开销，多环境并发无压力 |
-| **标准流隔离** | **严格分离** | 容易被 Banner/Log 污染 | 保证 JSON-RPC 通信协议不被多余输出打断 |
-| **依赖环境** | **仅需 JRE 8+** | 完整 Spring 生态包 | 单个 Fat-JAR 即包含 Dubbo 泛化调用与 Curator |
+| 指标 | 实测数值 | 说明 |
+| :--- | :--- | :--- |
+| **冷启动耗时** | **< 100 ms** | 进程随起随用，快速建立连接 |
+| **运行常驻内存 (RSS)** | **~25 MB** | 内存开销小，长时间运行无负担 |
+| **标准流隔离** | **严格分离** | 日志重定向至 `stderr`，防止污染 JSON-RPC 标准通信流 |
+| **依赖环境** | **仅需 JRE 8+** | 单个 Fat-JAR 运行，内置 Dubbo 泛化调用与 Curator |
 
 ---
 
