@@ -4,10 +4,10 @@
 
 # Dubbo-MCP
 
-[![真实测试环境：发现服务、读取元数据、调用 RPC 并统计结果](docs/media/dubbo-mcp-replay-zh.gif)](docs/media/dubbo-mcp-replay-zh.mp4)
+![真实测试环境：发现服务、读取元数据、调用 RPC 并统计结果](docs/media/dubbo-mcp-replay-zh.gif)
 
 **一句话 → 发现服务 → 读取方法签名 → 真实调用 → 分析结果。**
-15 秒真实测试环境 MCP 调用可视化；**这是调用回放，非 Codex CLI 录屏**。[观看 MP4](docs/media/dubbo-mcp-replay-zh.mp4) · [静态图片](docs/media/dubbo-mcp-replay-zh.png) · [素材来源与 CLI 录制说明](docs/demo/README.md)
+15 秒动图直接在本页自动循环，**无需点击查看**。内容来自真实测试环境 MCP 调用；**这是调用回放，非 Codex CLI 录屏**。[素材来源与录制说明](docs/demo/README.md)
 
 <p align="center">
   <b>Enterprise Apache Dubbo RPC Bridge for Model Context Protocol (MCP) & AI Coding Agents</b><br>

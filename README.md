@@ -4,10 +4,10 @@
 
 # Dubbo-MCP
 
-[![Real test-environment service discovery, method inspection, RPC and analysis](docs/media/dubbo-mcp-replay-en.gif)](docs/media/dubbo-mcp-replay-en.mp4)
+![Real test-environment service discovery, method inspection, RPC and analysis](docs/media/dubbo-mcp-replay-en.gif)
 
 **One question → service discovery → method schema → real RPC → answer.**
-15-second visualization of real test-environment MCP calls; **rendered replay, not Codex CLI footage**. [Watch MP4](docs/media/dubbo-mcp-replay-en.mp4) · [Static image](docs/media/dubbo-mcp-replay-en.png) · [Source & CLI recording guide](docs/demo/README.md)
+The 15-second GIF plays and loops directly on this page—no click needed. Real test-environment MCP calls; **rendered replay, not Codex CLI footage**. [Source & recording guide](docs/demo/README.md)
 
 <p align="center">
   <b>Enterprise Apache Dubbo RPC Bridge for Model Context Protocol (MCP) & AI Coding Agents</b><br>
