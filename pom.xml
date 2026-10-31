@@ -18,15 +18,29 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <dubbo.version>2.7.23</dubbo.version>
         <curator.version>4.2.0</curator.version>
-        <zookeeper.version>3.4.14</zookeeper.version>
+        <zookeeper.version>3.8.7</zookeeper.version>
         <fastjson2.version>2.0.43</fastjson2.version>
-        <jackson.version>2.13.5</jackson.version>
-        <okhttp.version>3.14.9</okhttp.version>
-        <slf4j.version>1.7.36</slf4j.version>
+        <okhttp.version>4.12.1</okhttp.version>
+        <slf4j.version>2.0.20</slf4j.version>
+        <netty.version>4.1.137.Final</netty.version>
     </properties>
 
+    <!-- Align Dubbo and ZooKeeper's Netty modules; mixing netty-all's old classes with new
+         ZooKeeper modules causes duplicate classes and linkage failures in the shaded JAR. -->
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>io.netty</groupId>
+                <artifactId>netty-bom</artifactId>
+                <version>${netty.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
     <dependencies>
-        <!-- Apache Dubbo 2.7.3 Core (No Spring Dependency) -->
+        <!-- Apache Dubbo 2.7.23 Core (No Spring Dependency) -->
         <dependency>
             <groupId>org.apache.dubbo</groupId>
             <artifactId>dubbo</artifactId>
@@ -39,7 +53,7 @@
             </exclusions>
         </dependency>
 
-        <!-- ZooKeeper and Curator (For Native Registry Discovery) -->
+        <!-- Retain Curator 4.2's legacy compatibility API used by Dubbo 2.7. -->
         <dependency>
             <groupId>org.apache.curator</groupId>
             <artifactId>curator-framework</artifactId>
@@ -55,6 +69,9 @@
             <artifactId>zookeeper</artifactId>
             <version>${zookeeper.version}</version>
             <exclusions>
+                <!-- Only slf4j-simple is shipped. ZooKeeper's logback bindings are unnecessary. -->
+                <exclusion><groupId>ch.qos.logback</groupId><artifactId>logback-classic</artifactId></exclusion>
+                <exclusion><groupId>ch.qos.logback</groupId><artifactId>logback-core</artifactId></exclusion>
                 <exclusion>
                     <groupId>org.slf4j</groupId>
                     <artifactId>slf4j-log4j12</artifactId>
@@ -71,13 +88,6 @@
             <groupId>com.alibaba.fastjson2</groupId>
             <artifactId>fastjson2</artifactId>
             <version>${fastjson2.version}</version>
-        </dependency>
-
-        <!-- Jackson for Standard JSON-RPC Schema Mapping -->
-        <dependency>
-            <groupId>com.fasterxml.jackson.core</groupId>
-            <artifactId>jackson-databind</artifactId>
-            <version>${jackson.version}</version>
         </dependency>
 
         <!-- OkHttp for Dubbo-Admin HTTP REST Bridge -->
@@ -99,6 +109,19 @@
             <version>${slf4j.version}</version>
         </dependency>
 
+        <dependency>
+            <groupId>com.squareup.okhttp3</groupId><artifactId>okhttp-tls</artifactId>
+            <version>${okhttp.version}</version><scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.dropwizard.metrics</groupId><artifactId>metrics-core</artifactId>
+            <version>4.2.37</version><scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.xerial.snappy</groupId><artifactId>snappy-java</artifactId>
+            <version>1.1.10.8</version><scope>test</scope>
+        </dependency>
+
         <!-- Unit Testing -->
         <dependency>
             <groupId>junit</groupId>
@@ -107,6 +130,18 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
+
+    <!-- Dubbo 2.7/Javassist and Hessian require these reflection packages on strongly
+         encapsulated JDKs. Native-mode users must pass the same flags at startup. -->
+    <profiles>
+        <profile>
+            <id>native-dubbo-modern-jdk</id>
+            <activation><jdk>[16,)</jdk></activation>
+            <properties>
+                <argLine>--add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.math=ALL-UNNAMED</argLine>
+            </properties>
+        </profile>
+    </profiles>
 
     <build>
         <plugins>

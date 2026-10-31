@@ -378,3 +378,7 @@ Admin HTTP 响应在解码、解析前按 `env.<env>.admin_max_response_bytes` �
 ZooKeeper 服务发现遵循注册中心 URL 的 `group` 命名空间，例如 `zookeeper://127.0.0.1:2181?group=team-a`；它与选择 RPC 服务组（如 `blue`）的 `env.<env>.group` 配置独立。
 
 Windows 安装优先选择 `target/dubbo-mcp.jar`，兼容旧 `1.0.0-SNAPSHOT` fat JAR，不安装带版本号的 Maven thin JAR。Windows CI 通过 `scripts/smoke_install.ps1` 检查产物选择、离线模拟下载回退及校验失败时保留旧 JAR。
+
+运行包已移除 Jackson；OkHttp 固定为 4.12.1、ZooKeeper 为 3.8.7，全部 Netty 模块统一为 4.1.137.Final。为兼容 Dubbo 2.7，Curator 保留 4.2.0，日志实现仅保留 SLF4J Simple。本地集成测试覆盖 ZooKeeper 注册、发现、泛化调用，以及 TLS 信任与主机名拒绝校验。可运行 `python3 scripts/check_runtime_dependencies.py target/dubbo-mcp.jar` 检查打包依赖边界。
+
+**Java 17/21 的原生 ZooKeeper/Dubbo 模式**需要为 Dubbo 2.7 开放反射访问：在 Java 命令或 MCP 服务 `args` 的 `-jar` 之前加入 `--add-opens=java.base/java.lang=ALL-UNNAMED` 和 `--add-opens=java.base/java.math=ALL-UNNAMED`。Java 8/11 和 HTTP Admin 模式不需要这些参数。Maven 在 JDK 16+ 的集成测试中自动启用。升级本项目客户端依赖不会升级远端 ZooKeeper 服务端。

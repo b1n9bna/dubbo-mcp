@@ -378,3 +378,7 @@ Admin HTTP bodies are bounded before decoding/parsing by `env.<env>.admin_max_re
 ZooKeeper service discovery respects the registry URL's `group` namespace, for example `zookeeper://127.0.0.1:2181?group=team-a`. This is separate from `env.<env>.group`, which selects a Dubbo service group such as `blue`.
 
 Windows installation prioritizes `target/dubbo-mcp.jar`, with the legacy `1.0.0-SNAPSHOT` fat JAR as a fallback. Versioned thin Maven JARs are not installed. `scripts/smoke_install.ps1` tests selection, offline download fallback and preservation of the installed JAR after validation failure in Windows CI.
+
+The runtime no longer ships Jackson. OkHttp is pinned to 4.12.1, ZooKeeper to 3.8.7, and all Netty modules to 4.1.137.Final. Curator stays on 4.2.0 for Dubbo 2.7 compatibility; SLF4J Simple is the only logging provider. Local integration tests cover ZooKeeper registration, discovery, generic invocation, and TLS trust/hostname rejection. `python3 scripts/check_runtime_dependencies.py target/dubbo-mcp.jar` checks the packaged dependency boundaries.
+
+For **native ZooKeeper/Dubbo mode on Java 17/21**, Dubbo 2.7 requires reflection access. Add `--add-opens=java.base/java.lang=ALL-UNNAMED` and `--add-opens=java.base/java.math=ALL-UNNAMED` before `-jar` in the Java command or your MCP server's `args`. These flags are unnecessary on Java 8/11 and for HTTP Admin mode. Maven enables them for integration tests on JDK 16+. Client library upgrades do not upgrade remote ZooKeeper servers.
