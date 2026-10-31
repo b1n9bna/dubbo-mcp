@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "source": "Actual MCP calls in this Codex chat; not a Codex CLI recording",
+  "recordedAt": "2026-10-31T04:35:31.490Z",
+  "env": "test",
+  "interface": "…TransportRpcService",
+  "method": "getLoadingTypeDict",
+  "prompt": "帮我查一下测试环境有哪些装柜类型，列出编码和名称，再统计共有几种类型。",
+  "calls": [
+    {
+      "tool": "dubbo_list_services",
+      "startedMs": 0,
+      "finishedMs": 29,
+      "keyword": "TransportRpcService",
+      "status": "SUCCESS"
+    },
+    {
+      "tool": "dubbo_get_service_detail",
+      "startedMs": 32,
+      "finishedMs": 61,
+      "interface": "…TransportRpcService",
+      "method": "getLoadingTypeDict()",
+      "status": "SUCCESS"
+    },
+    {
+      "tool": "dubbo_invoke",
+      "startedMs": 61,
+      "finishedMs": 88,
+      "method": "getLoadingTypeDict",
+      "args": [],
+      "status": "SUCCESS"
+    }
+  ],
+  "result": {
+    "success": true,
+    "data": [
+      {
+        "code": 0,
+        "desc": "整车"
+      },
+      {
+        "code": 1,
+        "desc": "散货"
+      },
+      {
+        "code": 2,
+        "desc": "小包"
+      }
+    ]
+  },
+  "summary": {
+    "count": 3,
+    "labels": [
+      "整车",
+      "散货",
+      "小包"
+    ]
+  },
+  "editNote": "Rendered replay, not real-time. Company package names and irrelevant response fields omitted."
+}
