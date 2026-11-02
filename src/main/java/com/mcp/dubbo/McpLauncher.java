@@ -55,6 +55,8 @@ public class McpLauncher {
         System.err.println("  dubbo-mcp                               # Start MCP Stdio Server");
         System.err.println("  dubbo-mcp install                       # Auto-detect and wire up all AI agents (Codex, Cursor, Claude)");
         System.err.println("  dubbo-mcp login                         # Validate and save Cookie + Authorization");
+        System.err.println("  dubbo-mcp login --browser               # Optional: log in using an isolated Chrome/Edge window");
+        System.err.println("  dubbo-mcp login --browser=edge          # Select Edge (or chrome, or an executable path)");
         System.err.println("  dubbo-mcp login --clipboard             # macOS: read credentials from clipboard");
         System.err.println("  dubbo-mcp login --stdin | --file PATH    # read credentials without terminal line limits");
         System.err.println("  dubbo-mcp --env=prod                    # Start with default env=prod");

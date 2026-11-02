@@ -11,14 +11,19 @@ import java.util.concurrent.TimeUnit;
 /** Credential input never goes through command-line arguments or log output. */
 public final class LoginCommand {
     public static void run(String[] args) throws Exception {
-        String env = "prod", file = null;
-        boolean clipboard = false, stdin = false;
+        String env = "prod", file = null, browserChoice = "";
+        boolean clipboard = false, stdin = false, browser = false;
         for (int i = 0; i < args.length; i++) {
             String a = args[i];
             if (a.startsWith("--env=")) env = a.substring(6);
             else if ("--env".equals(a) && i + 1 < args.length) env = args[++i];
             else if ("--clipboard".equals(a)) clipboard = true;
             else if ("--stdin".equals(a)) stdin = true;
+            else if ("--browser".equals(a)) browser = true;
+            else if (a.startsWith("--browser=")) {
+                browser = true; browserChoice = a.substring("--browser=".length()).trim();
+                if (browserChoice.isEmpty()) throw new IllegalArgumentException("--browser requires chrome, edge, or an executable path after =");
+            }
             else if ("--file".equals(a) && i + 1 < args.length) file = args[++i];
             else if (!"login".equals(a) && !"--login".equals(a)) throw new IllegalArgumentException("Unknown login option");
         }
@@ -29,8 +34,12 @@ public final class LoginCommand {
         }
         if (!"dubbo-admin".equalsIgnoreCase(type))
             throw new IllegalArgumentException("Login requires a configured dubbo-admin environment: " + env);
-        if ((clipboard ? 1 : 0) + (stdin ? 1 : 0) + (file != null ? 1 : 0) > 1)
-            throw new IllegalArgumentException("Choose only one of --clipboard, --stdin, --file");
+        if ((clipboard ? 1 : 0) + (stdin ? 1 : 0) + (file != null ? 1 : 0) + (browser ? 1 : 0) > 1)
+            throw new IllegalArgumentException("Choose only one of --browser, --clipboard, --stdin, --file");
+        if (browser) {
+            BrowserLogin.run(env, browserChoice);
+            return;
+        }
         System.err.println("🔐 Dubbo Admin credentials (" + env + ")");
         System.err.println("在已登录的 Dubbo Admin 控制台执行：");
         System.err.println("copy(JSON.stringify({cookie:document.cookie,authorization:localStorage.getItem('token')||localStorage.getItem('Admin-Token')}))");

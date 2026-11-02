@@ -18,7 +18,7 @@ def check(path):
         assert len(classes) == len(set(classes)), "Duplicate class entries in fat JAR"
         assert not any(name.startswith("com/fasterxml/jackson/") for name in names), "Jackson was reintroduced"
         assert not any(name.startswith(("ch/qos/logback/", "org/apache/log4j/")) for name in names), "Extra logging implementation"
-        assert not any(name.startswith(("okhttp3/tls/", "com/codahale/metrics/", "org/xerial/snappy/")) for name in names), "Test-only server dependencies shipped"
+        assert not any(name.startswith(("okhttp3/tls/", "okhttp3/mockwebserver/", "com/codahale/metrics/", "org/xerial/snappy/")) for name in names), "Test-only server dependencies shipped"
         binding = "META-INF/services/org.slf4j.spi.SLF4JServiceProvider"
         providers = [line.strip() for line in jar.read(binding).decode().splitlines()
                      if line.strip() and not line.lstrip().startswith("#")]

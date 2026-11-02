@@ -93,15 +93,19 @@ public class DubboAdminDriver implements RpcDriver {
                 + " --clipboard (macOS), copying cookie AND localStorage token as shown by login.");
     }
 
-    private synchronized void detectPrefixFromPage() throws IOException {
+    private synchronized void detectPrefixFromPage(String credential) throws IOException {
         if (detectedPrefix != null) return;
-        try (Response response = httpClient.newCall(new Request.Builder().url(adminUrl + "/").get().build()).execute()) {
+        Request.Builder page = new Request.Builder().url(adminUrl + "/").get();
+        if (credential != null) attachCredential(page, credential);
+        try (Response response = httpClient.newCall(page.build()).execute()) {
             String location = response.header("Location");
             // A context redirect is useful evidence; SSO redirects and failed pages are not.
             if (response.isRedirect() && location != null && location.contains("/dubbo-admin/")) {
                 detectedPrefix = "/dubbo-admin";
                 return;
             }
+            if (response.code() == 401 || response.code() == 403 || response.isRedirect())
+                throw new AuthenticationException("Dubbo Admin authentication failed while detecting API context");
             if (!response.isSuccessful())
                 throw new IOException("Cannot detect Dubbo Admin API prefix (HTTP " + response.code() + "); retry or set admin_api_prefix");
             String html = BoundedHttpBody.read(response.body(), maxResponseBytes);
@@ -113,19 +117,23 @@ public class DubboAdminDriver implements RpcDriver {
     }
 
     private String apiPrefix() throws IOException {
-        if (detectedPrefix == null) detectPrefixFromPage();
+        return apiPrefix(null);
+    }
+
+    private String apiPrefix(String credential) throws IOException {
+        if (detectedPrefix == null) detectPrefixFromPage(credential);
         return detectedPrefix == null ? "" : detectedPrefix;
     }
 
     private Object request(String path, JSONObject payload, String credential) throws Exception {
-        Request.Builder builder = new Request.Builder().url(adminUrl + apiPrefix() + "/api/dev" + path);
+        Request.Builder builder = new Request.Builder().url(adminUrl + apiPrefix(credential) + "/api/dev" + path);
         if (payload == null) builder.get();
         else builder.post(RequestBody.create(MediaType.parse("application/json; charset=utf-8"), payload.toJSONString()));
         attachCredential(builder, credential);
         try (Response response = httpClient.newCall(builder.build()).execute()) {
             int code = response.code();
             if (code == 401 || code == 403 || (code >= 300 && code < 400))
-                throw new IllegalStateException("Dubbo Admin authentication failed (HTTP " + code + ") for " + env
+                throw new AuthenticationException("Dubbo Admin authentication failed (HTTP " + code + ") for " + env
                         + "; log in again with cookie AND localStorage token. Run dubbo-mcp login --env=" + env + " --clipboard");
             if (!response.isSuccessful()) throw new AdminHttpException(code, path.split("\\?")[0]);
             String body = BoundedHttpBody.read(response.body(), maxResponseBytes).trim();
@@ -146,6 +154,11 @@ public class DubboAdminDriver implements RpcDriver {
         } else if (value.startsWith("Authorization:")) builder.header("Authorization", value.substring(14).trim());
         else if (value.startsWith("Bearer ") || value.startsWith("Token ") || !value.contains("=")) builder.header("Authorization", value);
         else builder.header("Cookie", value);
+    }
+
+    /** Allows browser login to distinguish rejected credentials from network/server failures. */
+    public static final class AuthenticationException extends IllegalStateException {
+        public AuthenticationException(String message) { super(message); }
     }
 
     private static final class AdminHttpException extends IOException {

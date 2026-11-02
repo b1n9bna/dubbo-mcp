@@ -23,7 +23,8 @@ public class DubboAdminDriverTest {
             String path = exchange.getRequestURI().getPath(); paths.add(path);
             if (path.endsWith("/test")) posts.incrementAndGet();
             String response; int status = 200;
-            if (path.equals("/") && mode.equals("prefix-outage")) { status=503; response="temporary unavailable"; }
+            if (path.equals("/") && mode.equals("prefix-auth") && !"session=example".equals(exchange.getRequestHeaders().getFirst("Cookie"))) { status=401; response="{}"; }
+            else if (path.equals("/") && mode.equals("prefix-outage")) { status=503; response="temporary unavailable"; }
             else if (path.equals("/") && mode.equals("prefix-login")) response="<html>temporary login page</html>";
             else if (path.equals("/")) response = "<script src=/dubbo-admin/js/app.js></script>";
             else if (mode.equals("prefix-login")) { status=404; response="{}"; }
@@ -70,6 +71,18 @@ public class DubboAdminDriverTest {
         driver=new DubboAdminDriver("mock");
     }
     @After public void teardown() { server.stop(0); ConfigManager.getInstance().getRawProperties().remove("env.mock.admin_url"); ConfigManager.getInstance().getRawProperties().remove("env.mock.admin_cookie"); ConfigManager.getInstance().getRawProperties().remove("env.mock.admin_max_response_bytes"); }
+    @Test public void protectedContextProbeUsesTheCredentialBeingValidated() throws Exception {
+        mode = "prefix-auth";
+        driver.verifyCredential("{\"cookie\":\"session=example\",\"authorization\":\"test-token\"}");
+        Assert.assertTrue(paths.contains("/dubbo-admin/api/dev/services"));
+        Assert.assertEquals(0, posts.get());
+    }
+    @Test public void rejectedContextProbeHasTypedAuthenticationFailure() throws Exception {
+        mode = "prefix-auth";
+        try { driver.verifyCredential("wrong-token"); Assert.fail(); }
+        catch (DubboAdminDriver.AuthenticationException expected) { }
+        Assert.assertEquals(0, posts.get());
+    }
     @Test public void discoversContextAndUsesActualServiceKeyAndDto() throws Exception {
         Assert.assertEquals(Collections.singletonList("com.example.Service"),driver.listServices("example"));
         Map<String,Object> detail=driver.getServiceMetadata("com.example.Service");

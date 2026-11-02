@@ -4,8 +4,8 @@ import okhttp3.ResponseBody;
 import java.io.*;
 
 /** Bounds decoded bytes, including transparent gzip responses with unknown content length. */
-final class BoundedHttpBody {
-    static String read(ResponseBody body, int limit) throws IOException {
+public final class BoundedHttpBody {
+    public static String read(ResponseBody body, int limit) throws IOException {
         if (body == null) return "";
         if (limit <= 0) throw new IllegalArgumentException("HTTP response limit must be positive");
         if (body.contentLength() > limit) throw oversized(limit);

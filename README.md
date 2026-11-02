@@ -135,6 +135,16 @@ security.readonly.regex=^(get|query|find|select|list|count|check|is|search|fetch
 
 Enterprise Dubbo Admin consoles are typically secured behind corporate Single Sign-On (SSO / OAuth). When configured with `env.prod.type=dubbo-admin`, save credentials once via terminal upon first run or after session expiry:
 
+**Browser login:** With Chrome or Edge installed, run:
+
+```bash
+dubbo-mcp login --browser
+```
+
+The command checks saved credentials first. If login is needed, it opens a dedicated browser window; complete your normal login and credentials are automatically verified and saved. The dedicated profile is separate from your everyday browser. Use `--browser=edge` to select Edge, or `--env=NAME` for another configured Admin environment.
+
+The existing clipboard workflow remains available:
+
 1. **Copy Session in Browser**: Log into your company's Dubbo Admin console, press <kbd>F12</kbd> to open Developer Tools Console, and run:
    ```javascript
    copy(JSON.stringify({

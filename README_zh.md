@@ -135,6 +135,16 @@ security.readonly.regex=^(get|query|find|select|list|count|check|is|search|fetch
 
 企业内部的 Dubbo Admin 通常接入了单点登录（SSO/OAuth）。若配置了 `env.prod.type=dubbo-admin`，首次使用或会话过期后，需在终端执行一次凭据保存：
 
+**新增浏览器登录**：电脑已安装 Chrome 或 Edge 时，可直接执行：
+
+```bash
+dubbo-mcp login --browser
+```
+
+程序先检查已有凭据，需要登录时打开专用浏览器窗口；正常完成登录后，自动验证并保存凭据。专用窗口与日常浏览器配置隔离，首次可能需要单独登录。可用 `--browser=edge` 指定 Edge，或用 `--env=环境名` 指定其他已配置的 Admin 环境。
+
+原有剪贴板登录方式继续保留：
+
 1. **获取登录态**：在浏览器打开并登录 Dubbo Admin 页面，按 <kbd>F12</kbd> 打开控制台 Console，执行：
    ```javascript
    copy(JSON.stringify({
