@@ -36,14 +36,16 @@ During daily troubleshooting, interface debugging, and unit testing, it allows A
 
 Instead of manually logging into Dubbo Admin web consoles, flipping through Swagger docs, or writing throwaway test scripts, simply converse with your AI assistant:
 
+The following interaction uses fictional interface names and sample data.
+
 > **Developer:**
 > *"Query the warehouse service in the test environment and fetch stock details for warehouse ID 2001."*
 >
 > **AI Agent (via Dubbo-MCP):**
 > 1. 🔍 `dubbo_list_services(keyword="Warehouse")`  
->    ↳ Discovers target service: `cn.wangoon.access.api.rpc.WarehouseServiceRpc:1.0.0`
+>    ↳ Discovers target service: `com.example.warehouse.api.WarehouseServiceRpc:1.0.0`
 > 2. 📋 `dubbo_get_service_detail(interfaceName="...")`  
->    ↳ Introspects signature: `queryStock(cn.wangoon.access.dto.WarehouseQueryDTO)`
+>    ↳ Introspects signature: `queryStock(com.example.warehouse.dto.WarehouseQueryDTO)`
 > 3. ⚡ `dubbo_invoke(interfaceName="...", method="queryStock", args=[{"warehouseId": 2001}])`  
 >    ↳ Native Dubbo generic invocation executed in **14 ms**
 >
@@ -235,7 +237,7 @@ Once configured, interact with your microservices using plain natural language i
 ## 🛡️ Enterprise Production Reliability
 
 To safeguard production invocation and LLM stability:
-1. **Dual-Track Service Search**: User queries like "oms" match services by both interface package names and provider `application` names (e.g. `cn.wangoon.trade.OrderRpcService (app: oms-provider)`).
+1. **Dual-Track Service Search**: User queries like "oms" match services by both interface package names and provider `application` names (e.g. `com.example.trade.OrderRpcService (app: oms-provider)`).
 2. **Precision Loss Prevention & Type Coercion**: 64-bit Snowflake IDs and order numbers passed as strings (e.g. `"202610080001"`) are safely coerced into `Long`, `BigDecimal`, or DTO maps without JavaScript 53-bit floating-point truncation. Conversions to `int`/`long` reject fractional, non-finite, and out-of-range values before invocation.
 3. **Implicit Arguments (`RpcContext` Attachments)**: Forward multi-tenant IDs, trace IDs, and routing tags via request `attachments` or environment properties (`env.<env>.attachment.<key>`).
 4. **Context Explosion Protection & JSONPath**: Responses larger than 24KB of UTF-8 bytes are structured-truncated into valid JSON envelopes with extraction hints, and `jsonPath` (e.g. `$.data.items[0]`) allows targeted extraction. JSONPath syntax is validated before RPC execution. `mcp.max_response_bytes` sets the byte cap; limits too small to fit the minimal truncation envelope are rejected before invocation.
@@ -337,7 +339,7 @@ If your corporate SSO session expires, requests return HTTP 401/403. Simply log 
 <summary><b>4. How do I initiate Dubbo debugging directly inside Cursor or Claude Code?</b></summary>
 
 Running `dubbo-mcp install` automatically configures `~/.cursor/mcp.json`. In Cursor chat, type natural language prompts such as:
-* *"Inspect the parameter structure of `cn.corp.trade.OrderRpcService` in production"*
+* *"Inspect the parameter structure of `com.example.trade.OrderRpcService` in production"*
 * *"Invoke `UserServiceRpc.getUserById` in the test environment with userId=10001"*
 
 Cursor automatically executes `dubbo_get_service_detail` to retrieve signatures and calls `dubbo_invoke` to return real-time JSON results without leaving your editor.

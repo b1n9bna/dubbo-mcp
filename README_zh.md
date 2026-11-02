@@ -36,14 +36,16 @@ Dubbo-MCP 是连接 AI 编程助手（Cursor、Claude Code、Claude Desktop、Co
 
 告别在浏览器登录 Dubbo Admin 翻找接口、用 Postman 拼装参数、或者写一堆仅用于联调的临时单元测试，直接在对话框向 AI 发出指令：
 
+以下使用虚构接口名和示例数据展示交互流程。
+
 > **开发者：**  
 > *“帮我查一下测试环境的仓库接口，调一下按仓库 ID=2001 查询库存的方法。”*  
 >  
 > **AI Agent（通过 dubbo-mcp 自动协作）：**  
 > 1. 🔍 `dubbo_list_services(keyword="Warehouse")`  
->    ↳ 发现目标服务：`cn.wangoon.access.api.rpc.WarehouseServiceRpc:1.0.0`  
+>    ↳ 发现目标服务：`com.example.warehouse.api.WarehouseServiceRpc:1.0.0`
 > 2. 📋 `dubbo_get_service_detail(interfaceName="...")`  
->    ↳ 提取方法签名：`queryStock(cn.wangoon.access.dto.WarehouseQueryDTO)`  
+>    ↳ 提取方法签名：`queryStock(com.example.warehouse.dto.WarehouseQueryDTO)`
 > 3. ⚡ `dubbo_invoke(interfaceName="...", method="queryStock", args=[{"warehouseId": 2001}])`  
 >    ↳ Dubbo 原生泛化调用执行完成（耗时 **14 ms**）  
 >  
@@ -235,7 +237,7 @@ args = []
 ## 🛡️ 企业级生产健壮性与调用容错
 
 为解决大模型在生产级企业微服务调用中的真实痛点，内置五大高阶保护机制：
-1. **应用名双轨检索**：用户输入“查 oms 的订单”时，即使接口名为 `cn.wangoon.trade.OrderRpcService`，也能通过服务端 application 属性匹配并展示 `cn.wangoon.trade.OrderRpcService (app: oms-provider)`；
+1. **应用名双轨检索**：用户输入“查 oms 的订单”时，即使接口名为 `com.example.trade.OrderRpcService`，也能通过服务端 application 属性匹配并展示 `com.example.trade.OrderRpcService (app: oms-provider)`；
 2. **雪花 ID 精度防丢失与类型强转**：支持将 18~19 位超长数值单号以字符串形式传入（避免 JavaScript 53 位浮点数溢出截断），底层自动强转为 Java `Long`/`BigDecimal`；转为 `int`/`long` 时，在调用前拒绝小数、非有限数及越界数值；
 3. **隐式参数透传（`RpcContext` Attachments）**：支持在请求中或配置文件（`env.<env>.attachment.<key>`）中注入租户号 `tenantId`、链路追踪 `traceId` 及灰度标；
 4. **大 JSON 上下文防打爆与 JSONPath**：返回报文超过 24KB 的 UTF-8 字节数时自动进行结构化安全缩略，并支持通过 `jsonPath`（如 `$.data.items[0]`）进行精准投影。JSONPath 在 RPC 执行前校验；`mcp.max_response_bytes` 可设置字节上限，无法容纳最小缩略信封的配置会在调用前报错；
@@ -337,7 +339,7 @@ Dubbo-MCP 基于 Dubbo 原生泛化调用（Generic Invocation）：
 <summary><b>4. 如何在 Cursor 或 Claude Code 中直接发起 Dubbo 接口联调？</b></summary>
 
 执行 `dubbo-mcp install` 后，Cursor 会在 `~/.cursor/mcp.json` 中自动挂载服务。在 Cursor 对话框中直接输入自然语言，例如：
-* *"帮我查一下生产环境订单接口 `cn.corp.trade.OrderRpcService` 的入参格式"*
+* *"帮我查一下生产环境订单接口 `com.example.trade.OrderRpcService` 的入参格式"*
 * *"用测试环境调用 `UserServiceRpc.getUserById`，入参 userId=10001"*
 
 Cursor 将自动调用 `dubbo_get_service_detail` 获取签名，并调用 `dubbo_invoke` 执行泛化调用返回实时 JSON，全程无需离开编辑器。
