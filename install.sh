@@ -30,6 +30,9 @@ BIN_DIR="$HOME/.local/bin"
 mkdir -p "$INSTALL_DIR"
 mkdir -p "$BIN_DIR"
 
+# Clean up any legacy or lingering dubbo-mcp zombie processes before updating
+pkill -f "dubbo-mcp\.jar" 2>/dev/null || true
+
 JAR_PATH="$INSTALL_DIR/dubbo-mcp.jar"
 CLI_WRAPPER="$BIN_DIR/dubbo-mcp"
 

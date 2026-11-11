@@ -43,6 +43,10 @@ try {
     $Verification = Start-Process -FilePath $JavaExe -ArgumentList @("-jar", "`"$StagedJar`"", "--help") `
         -NoNewWindow -Wait -PassThru -RedirectStandardOutput $VerifyOut -RedirectStandardError $VerifyErr
     if ($Verification.ExitCode -ne 0) { throw "Invalid or incompatible JAR" }
+    # Terminate any legacy or lingering dubbo-mcp processes before replacing file
+    Get-CimInstance Win32_Process -Filter "Name LIKE '%java%'" -ErrorAction SilentlyContinue |
+        Where-Object { $_.CommandLine -like "*dubbo-mcp.jar*" } |
+        ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
     Move-Item -Force $StagedJar $JarPath
 } finally {
     foreach ($TemporaryFile in @($StagedJar, $VerifyOut, $VerifyErr)) {
