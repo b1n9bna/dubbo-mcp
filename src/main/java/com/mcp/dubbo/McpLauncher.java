@@ -39,6 +39,7 @@ public class McpLauncher {
         // 2. Start MCP Stdio JSON-RPC Server
         StdioJsonRpcServer server = new StdioJsonRpcServer();
         server.start();
+        System.exit(0);
     }
 
     private static void runInteractiveLogin(String[] args) {

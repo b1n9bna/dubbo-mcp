@@ -30,6 +30,7 @@ public class StdioJsonRpcServer {
         int timeout = config.getInt("mcp.request_timeout_ms", 60000);
         int shutdown = config.getInt("mcp.shutdown_timeout_ms", 5000);
         int maxRequestBytes = config.getInt("mcp.max_request_bytes", 1024 * 1024);
+        int idleTimeoutSeconds = config.getInt("mcp.idle_timeout_seconds", 1800);
         if (maxRequestBytes <= 0 || maxRequestBytes > 8 * 1024 * 1024)
             throw new IllegalArgumentException("mcp.max_request_bytes must be between 1 and 8388608");
         if (timeout <= 0 || shutdown < 0) throw new IllegalArgumentException("Invalid MCP timeout configuration");
@@ -38,10 +39,24 @@ public class StdioJsonRpcServer {
                 new ArrayBlockingQueue<>(16), r -> daemon(r, "dubbo-mcp-tool"));
         ScheduledThreadPoolExecutor timer = new ScheduledThreadPoolExecutor(1, r -> daemon(r, "dubbo-mcp-timeout"));
         timer.setRemoveOnCancelPolicy(true);
+
+        java.util.concurrent.atomic.AtomicLong lastActiveTime = new java.util.concurrent.atomic.AtomicLong(System.currentTimeMillis());
+        if (idleTimeoutSeconds > 0) {
+            timer.scheduleWithFixedDelay(() -> {
+                checkParentLiveness();
+                long idle = System.currentTimeMillis() - lastActiveTime.get();
+                if (idle >= idleTimeoutSeconds * 1000L) {
+                    System.err.println("[StdioJsonRpcServer] Idle timeout (" + idleTimeoutSeconds + "s) reached without requests. Auto self-terminating to avoid orphan processes.");
+                    System.exit(0);
+                }
+            }, 30, 30, TimeUnit.SECONDS);
+        }
+
         Map<Object, PendingCall> pending = new ConcurrentHashMap<>();
         try (BoundedMessageReader reader = new BoundedMessageReader(input, maxRequestBytes)) {
             BoundedMessageReader.Frame frame;
             while ((frame = reader.readFrame()) != null) {
+                lastActiveTime.set(System.currentTimeMillis());
                 if (frame.oversized) {
                     write(output, JSON.toJSONString(JsonRpcResponse.error(null, -32600,
                             "Message exceeds mcp.max_request_bytes; frame discarded")));
@@ -97,6 +112,29 @@ public class StdioJsonRpcServer {
     private static void write(PrintStream output, String response) {
         if (response == null) return;
         synchronized (output) { output.println(response); output.flush(); }
+    }
+
+    private void checkParentLiveness() {
+        try {
+            Class<?> phClass = Class.forName("java.lang.ProcessHandle");
+            Object current = phClass.getMethod("current").invoke(null);
+            java.util.Optional<?> parentOpt = (java.util.Optional<?>) phClass.getMethod("parent").invoke(current);
+            if (parentOpt.isPresent()) {
+                Object parent = parentOpt.get();
+                long parentPid = (long) phClass.getMethod("pid").invoke(parent);
+                if (parentPid == 1) {
+                    System.err.println("[StdioJsonRpcServer] Parent process terminated (re-parented to init/launchd). Auto self-terminating...");
+                    System.exit(0);
+                }
+                boolean isAlive = (boolean) phClass.getMethod("isAlive").invoke(parent);
+                if (!isAlive) {
+                    System.err.println("[StdioJsonRpcServer] Parent process died. Auto self-terminating...");
+                    System.exit(0);
+                }
+            }
+        } catch (Throwable ignored) {
+            // Running on Java 8 or restricted sandbox; idle timer watchdog remains active
+        }
     }
 
     private final class PendingCall {
